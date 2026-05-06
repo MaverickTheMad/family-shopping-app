@@ -55,14 +55,40 @@ const SEED_SECTIONS = {
   "Toilet Paper":"Household","Paper Plates (Small)":"Household","Paper Plates (Large)":"Household",
 };
 
-const SECTION_ORDER = ["Produce","Bakery","Dairy","Meat","Dry Goods","Frozen","Household","Other"];
-const CATEGORIES = ["Soup","Sandwich","Steak","Chicken","Other"];
+const SECTION_ORDER = [
+  "Produce","Meat & Seafood","Dairy & Eggs","Bakery & Bread",
+  "Canned & Jarred","Dry Goods & Pasta","Spices & Seasonings",
+  "Condiments & Sauces","Oils & Baking","Beverages & Wine",
+  "Frozen","Household","Other",
+];
+const RECIPE_CATEGORIES = ["Soup","Pasta","Sandwich","Steak","Chicken","Pork","Seafood","Salad","Breakfast","Other"];
 
 // --------------------------------------------------------------------------
 // HELPERS
 // --------------------------------------------------------------------------
+function detectSection(name) {
+  const lower = (name || "").toLowerCase();
+  const rules = [
+    { s: "Produce", k: ["garlic","onion","tomato","potato","carrot","celery","spinach","broccoli","pepper","lemon","lime","mushroom","ginger","basil","thyme","rosemary","sage","parsley","cilantro","mint","dill","oregano","kale","cabbage","cucumber","zucchini","squash","avocado","corn","pea","bean sprout","green bean","jarlic","minced garlic","scallion","shallot","leek"] },
+    { s: "Meat & Seafood", k: ["chicken","beef","steak","pork","turkey","lamb","salmon","shrimp","fish","bacon","sausage","kielbasa","ham","salami","pepperoni","ground","ribeye","tenderloin","brisket","meatball","chorizo","prosciutto","deli"] },
+    { s: "Dairy & Eggs", k: ["butter","milk","cream","cheese","egg","yogurt","parmesan","mozzarella","cheddar","ricotta","boursin","queso","oatmilk","keifer","kefir","cold foam"] },
+    { s: "Bakery & Bread", k: ["bread","roll","bun","tortilla","flatbread","pita","naan","bagel","croissant","hawaiian","sourdough","baguette"] },
+    { s: "Canned & Jarred", k: ["broth","stock","tomato paste","tomato sauce","fire roasted","diced tomato","coconut milk","bouillon","beans","chickpea","olive","pickle","capers"] },
+    { s: "Dry Goods & Pasta", k: ["pasta","rice","noodle","orzo","flour","oat","cereal","cracker","chip","breadcrumb","quinoa","barley","couscous","polenta","cornstarch","corn starch","chicken rice"] },
+    { s: "Spices & Seasonings", k: ["salt","pepper","paprika","cumin","oregano","cinnamon","cayenne","garlic powder","onion powder","chili","seasoning","bay leaf","bay leaves","italian seasoning","turmeric","nutmeg","allspice"] },
+    { s: "Condiments & Sauces", k: ["soy sauce","honey","mustard","ketchup","mayo","vinegar","worcestershire","sriracha","hot sauce","marinara","pasta sauce","pesto","ranch","dijon","balsamic","vinaigrette","teriyaki","hoisin","molasses","maple syrup","jam"] },
+    { s: "Oils & Baking", k: ["oil","butter","baking powder","baking soda","sugar","vanilla","yeast","cocoa","chocolate chip","shortening"] },
+    { s: "Beverages & Wine", k: ["wine","beer","broth","juice","coffee","tea","cider","vodka","rum","whiskey","bourbon","tequila","gin","sake","white wine","red wine","cabernet","sauvignon"] },
+    { s: "Frozen", k: ["frozen","nugget","ice cream","popsicle","edamame","tater"] },
+    { s: "Household", k: ["toilet paper","paper plate","paper towel","trash bag","dish soap","detergent","foil","plastic wrap","parchment","ziplock","napkin","sponge"] },
+  ];
+  for (const rule of rules) {
+    for (const kw of rule.k) { if (lower.includes(kw)) return rule.s; }
+  }
+  return "Other";
+}
 function getSection(name, sections) {
-  return sections[name] || "Other";
+  return sections[name] || detectSection(name);
 }
 function sectionOrder(s) {
   const i = SECTION_ORDER.indexOf(s);
@@ -828,7 +854,9 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   const [name, setName] = useState(recipe.name);
   const [url, setUrl] = useState(recipe.url || "");
   const [category, setCategory] = useState(recipe.category || "Other");
-  const [ingredients, setIngredients] = useState(recipe.ingredients || []);
+  const [ingredients, setIngredients] = useState(recipe.ingredients || []).map((i) =>
+    typeof i === "string" ? { name: i, quantity: "" } : { name: i.name || "", quantity: i.quantity || "" }
+  );
   const [newIng, setNewIng] = useState("");
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
