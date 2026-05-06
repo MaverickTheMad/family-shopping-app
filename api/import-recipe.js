@@ -1,139 +1,24 @@
-// --------------------------------------------------------------------------
-// AUTO-CATEGORY DETECTION
-// --------------------------------------------------------------------------
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
+
+// ─── Auto-category detection ──────────────────────────────────────────────────
+
 const CATEGORY_RULES = [
-  {
-    section: "Produce",
-    keywords: [
-      "apple","apricot","artichoke","arugula","asparagus","avocado","banana","basil","beet",
-      "bell pepper","blackberry","blueberry","bok choy","broccoli","brussels","butternut",
-      "cabbage","cantaloupe","carrot","cauliflower","celery","cherry","chive","cilantro",
-      "clementine","collard","corn","cucumber","dill","eggplant","endive","fennel","fig",
-      "garlic","ginger","grape","grapefruit","green bean","green onion","herb","jalapeño",
-      "jarlic","kale","leek","lemon","lettuce","lime","mango","mint","mushroom","nectarine",
-      "onion","orange","parsley","peach","pear","pea","pepper","plum","pomegranate","potato",
-      "pumpkin","radicchio","radish","raspberry","rosemary","sage","scallion","shallot",
-      "spinach","squash","strawberry","sweet potato","thyme","tomatillo","tomato","turnip",
-      "watermelon","yam","zucchini","minced garlic","fresh","sprout","sprouts","microgreen",
-    ],
-  },
-  {
-    section: "Meat & Seafood",
-    keywords: [
-      "bacon","beef","bison","chicken","chorizo","clam","cod","crab","duck","fish","ground beef",
-      "ground pork","ground turkey","ham","kielbasa","lamb","lobster","meatball","meatballs",
-      "pepperoni","pork","prosciutto","ribeye","roast","salami","salmon","sausage","scallop",
-      "shrimp","sirloin","steak","tilapia","tuna","turkey","veal","venison","anchovy","anchov",
-      "deli","loin","tenderloin","brisket","short rib","flank","chuck","skirt","drumstick",
-      "thigh","breast","wing","filet","fillet","seafood","shellfish",
-    ],
-  },
-  {
-    section: "Dairy & Eggs",
-    keywords: [
-      "butter","buttermilk","cheese","cream cheese","cream","creme","egg","ghee","half and half",
-      "heavy cream","kefir","keifer","milk","mozzarella","oat milk","oatmilk","parmesan",
-      "provolone","ricotta","sour cream","whipped cream","whipping cream","yogurt",
-      "boursin","brie","camembert","cheddar","colby","cottage cheese","feta","gouda",
-      "gruyere","havarti","jack cheese","manchego","muenster","pepper jack","queso",
-      "romano","swiss","velveeta","american cheese","shredded","cold foam",
-    ],
-  },
-  {
-    section: "Bakery & Bread",
-    keywords: [
-      "bagel","baguette","biscuit","bread","brioche","bun","challah","ciabatta","croissant",
-      "crouton","english muffin","flatbread","focaccia","hoagie","hot dog bun","kaiser",
-      "naan","panko","pita","pretzel","roll","sourdough","sub roll","tortilla","wrap",
-      "hawaiian roll","slider bun","pizza dough","pie crust","phyllo","puff pastry",
-    ],
-  },
-  {
-    section: "Canned & Jarred",
-    keywords: [
-      "artichoke hearts","bean","black bean","cannellini","chickpea","chipotle","chili",
-      "coconut milk","diced tomato","fire roasted","garbanzo","green chile","kidney bean",
-      "lentil","navy bean","pinto bean","pumpkin puree","refried bean","rotel",
-      "sun dried tomato","tomato paste","tomato sauce","whole tomato","bouillon",
-      "broth","stock","clam juice","evaporated milk","sweetened condensed",
-      "olive","pickle","pickled","capers","roasted pepper","salsa","tapenade",
-      "water chestnut","bamboo shoot","hearts of palm",
-    ],
-  },
-  {
-    section: "Dry Goods & Pasta",
-    keywords: [
-      "barley","bread crumb","breadcrumb","brown rice","bulgur","couscous","egg noodle",
-      "farro","flour","fusilli","lasagna noodle","lentil","linguine","macaroni","noodle",
-      "oat","orzo","pappardelle","pasta","penne","polenta","quinoa","ramen","rice",
-      "rigatoni","rotini","spaghetti","tagliatelle","tortellini","vermicelli","white rice",
-      "wild rice","whole wheat","corn starch","cornstarch","arrowroot","panko","stuffing",
-      "cracker","chip","pretzel chip","popcorn","granola","cereal","oatmeal","grits",
-    ],
-  },
-  {
-    section: "Spices & Seasonings",
-    keywords: [
-      "allspice","ancho","anise","bay leaf","bay leaves","black pepper","cajun","cardamom",
-      "cayenne","chili flake","chili powder","chinese five","cinnamon","clove","coriander",
-      "cumin","curry","fennel seed","fenugreek","garam masala","garlic powder","ginger powder",
-      "herb","italian seasoning","lemon pepper","mace","mustard seed","nutmeg","old bay",
-      "onion powder","oregano","paprika","pepper flake","pumpkin spice","red pepper",
-      "saffron","salt","seasoning","smoked paprika","star anise","sumac","taco seasoning",
-      "turmeric","vanilla","white pepper","za'atar","everything bagel","montreal",
-    ],
-  },
-  {
-    section: "Condiments & Sauces",
-    keywords: [
-      "aioli","balsamic","bbq","buffalo sauce","cocktail sauce","fish sauce","hoisin",
-      "honey mustard","hot sauce","ketchup","maggi","marinara","mayo","mayonnaise",
-      "mustard","oyster sauce","pasta sauce","pesto","pizza sauce","ponzu","ranch",
-      "relish","salsa verde","sriracha","steak sauce","soy sauce","tahini","tamari",
-      "teriyaki","vinaigrette","vinegar","worcestershire","yellow mustard","dijon",
-      "honey","maple syrup","agave","molasses","jam","jelly","preserve","spread",
-    ],
-  },
-  {
-    section: "Oils & Baking",
-    keywords: [
-      "almond flour","avocado oil","baking powder","baking soda","brown sugar","canola",
-      "chocolate chip","cocoa","coconut oil","coconut sugar","confectioner","cooking spray",
-      "corn syrup","extracts","gelatin","lard","olive oil","peanut oil","powdered sugar",
-      "sesame oil","shortening","sugar","sunflower oil","vanilla extract","vegetable oil",
-      "walnut oil","white sugar","yeast","cream of tartar","tapioca","arrowroot",
-    ],
-  },
-  {
-    section: "Beverages & Wine",
-    keywords: [
-      "beer","bourbon","brandy","broth","cabernet","chardonnay","cider","club soda",
-      "coffee","espresso","gin","juice","kombucha","lager","liqueur","merlot","mezcal",
-      "pinot","prosecco","red wine","rum","sake","sauvignon blanc","seltzer","sparkling",
-      "tequila","vodka","whiskey","white wine","wine","cold brew","tea","lemonade",
-    ],
-  },
-  {
-    section: "Frozen",
-    keywords: [
-      "edamame","frozen","ice cream","nugget","popsicle","sorbet","tater tot",
-      "frozen pea","frozen corn","frozen spinach","frozen broccoli","frozen berry",
-      "frozen mango","ice","gelato","sherbet","frozen meal","frozen pizza",
-    ],
-  },
-  {
-    section: "Household",
-    keywords: [
-      "aluminum foil","bag","battery","candle","cleaner","detergent","dish soap",
-      "foil","garbage bag","hand soap","napkin","paper bag","paper plate","paper towel",
-      "plastic bag","plastic wrap","parchment","sandwich bag","sponge","toilet paper",
-      "toothpaste","trash bag","wax paper","ziplock","ziploc","tissue","lotion",
-    ],
-  },
+  { section: "Produce", keywords: ["garlic","onion","tomato","potato","carrot","celery","spinach","broccoli","pepper","lemon","lime","mushroom","ginger","basil","thyme","rosemary","sage","parsley","cilantro","mint","dill","oregano","kale","cabbage","cucumber","zucchini","squash","avocado","corn","green bean","jarlic","minced garlic","scallion","shallot","leek","artichoke","arugula","asparagus","beet","bok choy","fennel","radish","turnip","yam","sweet potato","apple","banana","berry","cherry","grape","mango","peach","pear","plum","strawberry"] },
+  { section: "Meat & Seafood", keywords: ["chicken","beef","steak","pork","turkey","lamb","salmon","shrimp","fish","bacon","sausage","kielbasa","ham","salami","pepperoni","ground beef","ground pork","ribeye","tenderloin","brisket","meatball","chorizo","prosciutto","deli","spicy sausage","ground sausage","ground turkey","cod","tilapia","tuna","crab","lobster","scallop","anchovy","duck","veal","venison","bison"] },
+  { section: "Dairy & Eggs", keywords: ["butter","milk","cream","cheese","egg","yogurt","parmesan","mozzarella","cheddar","ricotta","boursin","queso","oatmilk","keifer","kefir","cold foam","heavy cream","sour cream","cream cheese","buttermilk","ghee","provolone","gouda","brie","feta","swiss","jack cheese","pepper jack","shredded"] },
+  { section: "Bakery & Bread", keywords: ["bread","roll","bun","tortilla","flatbread","pita","naan","bagel","croissant","hawaiian","sourdough","baguette","english muffin","hoagie","ciabatta","focaccia"] },
+  { section: "Canned & Jarred", keywords: ["broth","stock","tomato paste","tomato sauce","fire roasted","diced tomato","coconut milk","bouillon","chickpea","garbanzo","black bean","kidney bean","pinto bean","cannellini","olive","pickle","capers","roasted pepper","tapenade","water chestnut"] },
+  { section: "Dry Goods & Pasta", keywords: ["pasta","rice","noodle","orzo","flour","oat","cereal","cracker","chip","breadcrumb","quinoa","barley","couscous","polenta","cornstarch","corn starch","chicken rice","lasagna","spaghetti","penne","rigatoni","fusilli","linguine","tortellini","ramen","stuffing"] },
+  { section: "Spices & Seasonings", keywords: ["salt","paprika","cumin","oregano","cinnamon","cayenne","garlic powder","onion powder","chili powder","seasoning","bay leaf","bay leaves","italian seasoning","turmeric","nutmeg","allspice","red pepper flake","black pepper","white pepper","smoked paprika","sweet paprika","cardamom","coriander","fennel seed","garam masala","old bay","taco seasoning","cajun"] },
+  { section: "Condiments & Sauces", keywords: ["soy sauce","honey","mustard","ketchup","mayo","vinegar","worcestershire","sriracha","hot sauce","marinara","pasta sauce","pesto","ranch","dijon","balsamic","vinaigrette","teriyaki","hoisin","molasses","maple syrup","jam","jelly","fish sauce","oyster sauce","tahini","tamari","bbq"] },
+  { section: "Oils & Baking", keywords: ["avocado oil","olive oil","vegetable oil","canola oil","sesame oil","coconut oil","baking powder","baking soda","brown sugar","chocolate chip","cocoa","vanilla extract","yeast","shortening","cream of tartar","powdered sugar","cooking spray"] },
+  { section: "Beverages & Wine", keywords: ["wine","beer","cabernet","sauvignon blanc","chardonnay","merlot","pinot","prosecco","white wine","red wine","cider","vodka","rum","whiskey","bourbon","tequila","gin","sake","juice","coffee","tea","lemonade","club soda","seltzer","kombucha"] },
+  { section: "Frozen", keywords: ["frozen","nugget","ice cream","popsicle","edamame","tater tot","gelato","sherbet"] },
+  { section: "Household", keywords: ["toilet paper","paper plate","paper towel","trash bag","dish soap","detergent","aluminum foil","plastic wrap","parchment","ziplock","napkin","sponge","tissue","candle","battery","lotion","hand soap"] },
 ];
 
-export function detectSection(ingredientName) {
-  const lower = ingredientName.toLowerCase();
+function detectSection(name) {
+  const lower = (name || "").toLowerCase();
   for (const rule of CATEGORY_RULES) {
     for (const kw of rule.keywords) {
       if (lower.includes(kw)) return rule.section;
@@ -142,70 +27,27 @@ export function detectSection(ingredientName) {
   return "Other";
 }
 
-// --------------------------------------------------------------------------
-// QUANTITY PARSER
-// --------------------------------------------------------------------------
-const UNICODE_FRACTIONS = {
-  "¼": "1/4", "½": "1/2", "¾": "3/4",
-  "⅓": "1/3", "⅔": "2/3",
-  "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
-};
+// ─── Quantity parser ──────────────────────────────────────────────────────────
 
-const WORD_NUMBERS = {
-  one: "1", two: "2", three: "3", four: "4", five: "5",
-  six: "6", seven: "7", eight: "8", nine: "9", ten: "10",
-};
-
-const UNITS = [
-  "tablespoons?", "tbsps?", "tbs?",
-  "teaspoons?", "tsps?",
-  "cups?",
-  "fluid ounces?", "fl\\.? oz\\.?",
-  "ounces?", "oz\\.?",
-  "pounds?", "lbs?\\.?",
-  "grams?", "g\\.?",
-  "kilograms?", "kg\\.?",
-  "milliliters?", "ml\\.?",
-  "liters?", "l\\.?",
-  "quarts?", "qt\\.?",
-  "pints?", "pt\\.?",
-  "gallons?",
-  "inches?", "in\\.?",
-  "cloves?",
-  "cans?", "jars?", "bags?", "boxes?", "packages?", "pkgs?\\.?",
-  "slices?", "pieces?", "strips?", "fillets?", "stalks?", "heads?",
-  "bunches?", "sprigs?", "leaves?", "sheets?",
-  "pinch(?:es)?", "dash(?:es)?", "handful(?:s)?",
-  "sticks?",
-];
+const UNICODE_FRACTIONS = { "¼":"1/4","½":"1/2","¾":"3/4","⅓":"1/3","⅔":"2/3","⅛":"1/8","⅜":"3/8","⅝":"5/8","⅞":"7/8" };
+const WORD_NUMBERS = { one:"1",two:"2",three:"3",four:"4",five:"5",six:"6",seven:"7",eight:"8",nine:"9",ten:"10" };
+const UNITS = ["tablespoons?","tbsps?","tbs?","teaspoons?","tsps?","cups?","fluid ounces?","fl\\.? oz\\.?","ounces?","oz\\.?","pounds?","lbs?\\.?","grams?","g\\.?","kilograms?","kg\\.?","milliliters?","ml\\.?","liters?","l\\.?","quarts?","qt\\.?","pints?","pt\\.?","gallons?","cloves?","cans?","jars?","bags?","boxes?","packages?","pkgs?\\.?","slices?","pieces?","strips?","stalks?","heads?","bunches?","sprigs?","leaves?","pinch(?:es)?","dash(?:es)?","handful(?:s)?","sticks?"];
 const UNIT_RE = new RegExp(`^(${UNITS.join("|")})\\b`, "i");
 
-export function parseIngredientLine(raw) {
+function parseIngredientLine(raw) {
   let str = raw.trim();
-
-  // Replace unicode fractions
-  for (const [uc, rep] of Object.entries(UNICODE_FRACTIONS)) {
-    str = str.replace(new RegExp(uc, "g"), ` ${rep}`);
-  }
-
-  // Strip HTML
+  for (const [uc, rep] of Object.entries(UNICODE_FRACTIONS)) str = str.replace(new RegExp(uc, "g"), ` ${rep}`);
   str = str.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-
-  // Replace word numbers at start
   str = str.replace(/^(one|two|three|four|five|six|seven|eight|nine|ten)\b/i, (m) => WORD_NUMBERS[m.toLowerCase()] || m);
 
-  // Match leading quantity: number or fraction, optionally followed by unit
   const qtyRe = /^(\d+(?:[\/\-]\d+)?(?:\.\d+)?(?:\s+\d+\/\d+)?)\s*/;
   const qtyMatch = str.match(qtyRe);
-
   let quantity = "";
   let rest = str;
 
   if (qtyMatch) {
     quantity = qtyMatch[1].trim();
     rest = str.slice(qtyMatch[0].length);
-
-    // Now try to grab a unit
     const unitMatch = rest.match(UNIT_RE);
     if (unitMatch) {
       quantity = `${quantity} ${unitMatch[0].trim()}`;
@@ -213,175 +55,144 @@ export function parseIngredientLine(raw) {
     }
   }
 
-  // Clean up the ingredient name
   let name = rest
     .replace(/^,\s*/, "")
-    .replace(/\([^)]*\)/g, "")       // remove parentheticals
-    .replace(/,.*$/, "")             // remove everything after comma
+    .replace(/\([^)]*\)/g, "")
+    .replace(/,.*$/, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  // Capitalize first letter
   name = name.charAt(0).toUpperCase() + name.slice(1);
-
   return { name, quantity };
 }
 
-// --------------------------------------------------------------------------
-// VERCEL HANDLER
-// --------------------------------------------------------------------------
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+// ─── Extract ingredients from PDF plain text ──────────────────────────────────
 
-  const { url } = req.body;
-  if (!url) return res.status(400).json({ error: "No URL provided" });
-
-  // Strategy 1: fetch directly and look for JSON-LD (fastest, works on many sites)
-  let html = await fetchDirect(url);
-
-  // If direct fetch got us JSON-LD, use it right away
-  const directResult = tryJsonLd(html);
-  if (directResult) return res.status(200).json(directResult);
-
-  // Strategy 2: Jina AI reader — renders pages properly, bypasses most bot protection
-  // Free, no API key, works on Cloudflare-protected sites
-  const jinaUrl = `https://r.jina.ai/${url}`;
-  let jinaText = "";
-  try {
-    const jinaRes = await fetch(jinaUrl, {
-      headers: {
-        "Accept": "text/plain",
-        "X-Return-Format": "text",
-      },
-    });
-    jinaText = await jinaRes.text();
-  } catch (e) {
-    // Jina failed, continue to fallback
-  }
-
-  // Try to find ingredients in Jina's plain-text output
-  if (jinaText && jinaText.length > 100) {
-    const jinaIngredients = parseIngredientsFromText(jinaText);
-    if (jinaIngredients.length > 0) {
-      const nameMatch = jinaText.match(/^#\s+(.+)/m) || jinaText.match(/Title:\s*(.+)/m);
-      const name = nameMatch ? nameMatch[1].trim() : "";
-      return res.status(200).json({ name, ingredients: jinaIngredients });
-    }
-  }
-
-  // Strategy 3: try HTML scraping from direct fetch as last resort
-  const liResult = tryLiScrape(html);
-  if (liResult) return res.status(200).json(liResult);
-
-  return res.status(200).json({ name: "", ingredients: [] });
-}
-
-async function fetchDirect(url) {
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-    });
-    return await res.text();
-  } catch (e) {
-    return "";
-  }
-}
-
-function tryJsonLd(html) {
-  if (!html) return null;
-  const jsonLdRe = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let match;
-  while ((match = jsonLdRe.exec(html)) !== null) {
-    try {
-      const json = JSON.parse(match[1].trim());
-      const nodes = Array.isArray(json) ? json : [json, ...(json["@graph"] || [])];
-      for (const node of nodes) {
-        const t = Array.isArray(node["@type"]) ? node["@type"] : [node["@type"]];
-        if (t.includes("Recipe")) {
-          const name = node.name || "";
-          const ingredients = (node.recipeIngredient || []).map((line) => {
-            const { name: ingName, quantity } = parseIngredientLine(line);
-            return { name: ingName, quantity, section: detectSection(ingName) };
-          });
-          if (ingredients.length > 0) return { name, ingredients };
-        }
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-  return null;
-}
-
-function tryLiScrape(html) {
-  if (!html) return null;
-  const liRe = /<li[^>]*class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+function extractIngredientsFromText(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const ingredients = [];
-  let liMatch;
-  while ((liMatch = liRe.exec(html)) !== null) {
-    const text = liMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    if (text) {
-      const { name: ingName, quantity } = parseIngredientLine(text);
-      if (ingName) ingredients.push({ name: ingName, quantity, section: detectSection(ingName) });
-    }
-  }
-  if (ingredients.length === 0) return null;
-  const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-  const name = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
-  return { name, ingredients };
-}
-
-// Parse ingredients from Jina's plain text output
-// Jina returns markdown-like text; ingredients often appear as list items
-function parseIngredientsFromText(text) {
-  const ingredients = [];
-  const lines = text.split("\n");
-  let inIngredientSection = false;
+  let inIngredients = false;
+  let ingredientLines = [];
 
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    // Detect ingredient section headers
-    if (/^#+\s*(ingredient|what you.ll need|you.ll need)/i.test(trimmed)) {
-      inIngredientSection = true;
+    if (/^ingredients?$/i.test(line) || /^what you.?ll need$/i.test(line)) {
+      inIngredients = true;
       continue;
     }
-    // Stop at instructions section
-    if (inIngredientSection && /^#+\s*(instruction|direction|method|how to|step)/i.test(trimmed)) {
+    if (inIngredients && /^(instructions?|directions?|method|how to make|preparation|steps?)$/i.test(line)) {
       break;
     }
-
-    if (inIngredientSection) {
-      // List items (markdown bullets or numbers)
-      const listMatch = trimmed.match(/^[-*•·▪◦]\s+(.+)/) || trimmed.match(/^\d+\.\s+(.+)/);
-      if (listMatch) {
-        const { name: ingName, quantity } = parseIngredientLine(listMatch[1]);
-        if (ingName && ingName.length > 1) {
-          ingredients.push({ name: ingName, quantity, section: detectSection(ingName) });
-        }
-      }
-    }
+    if (inIngredients) ingredientLines.push(line);
   }
 
-  // If section detection failed, try a looser pass: look for lines that look like ingredients
-  if (ingredients.length === 0) {
-    for (const line of lines) {
-      const trimmed = line.trim();
-      const listMatch = trimmed.match(/^[-*•·▪◦]\s+(.+)/);
-      if (listMatch) {
-        const { name: ingName, quantity } = parseIngredientLine(listMatch[1]);
-        // Only include if it looks like an ingredient (has a unit or short name)
-        if (ingName && ingName.length > 1 && ingName.length < 60) {
-          ingredients.push({ name: ingName, quantity, section: detectSection(ingName) });
-        }
+  // If no section header found, use whole doc
+  if (ingredientLines.length === 0) ingredientLines = lines;
+
+  for (const line of ingredientLines) {
+    if (line.length < 3 || line.length > 120) continue;
+    if (/^(instructions?|directions?|notes?|tips?|step \d|print|save|share|jump to|serves|yield|prep|cook|total time)/i.test(line)) continue;
+
+    const startsWithQuantity = /^[\d¼½¾⅓⅔⅛⅜⅝⅞]/.test(line);
+    const startsWithBullet = /^[-•*·]/.test(line);
+    const cleanLine = line.replace(/^[-•*·]\s*/, "");
+
+    if (startsWithQuantity || startsWithBullet) {
+      const { name, quantity } = parseIngredientLine(cleanLine);
+      if (name && name.length > 1 && name.length < 80) {
+        ingredients.push({ name, quantity, section: detectSection(name) });
       }
     }
   }
 
   return ingredients;
+}
+
+function extractRecipeName(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  for (const line of lines.slice(0, 10)) {
+    if (line.length > 3 && line.length < 100 && !line.startsWith("http")) {
+      if (/^(print|save|share|jump|by |author|yield|serves|prep|cook|total)/i.test(line)) continue;
+      return line;
+    }
+  }
+  return "";
+}
+
+// ─── Vercel handler ───────────────────────────────────────────────────────────
+
+export const config = { api: { bodyParser: false } };
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).end();
+
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const body = Buffer.concat(chunks);
+
+  const contentType = req.headers["content-type"] || "";
+  const boundaryMatch = contentType.match(/boundary=(.+)$/);
+  if (!boundaryMatch) return res.status(400).json({ error: "Invalid request format" });
+
+  const parts = parseMultipart(body, boundaryMatch[1]);
+  const pdfPart = parts.find((p) => p.contentType === "application/pdf" || (p.filename && p.filename.toLowerCase().endsWith(".pdf")));
+
+  if (!pdfPart) return res.status(400).json({ error: "No PDF file found in request" });
+
+  let pdfText = "";
+  try {
+    const data = await pdfParse(pdfPart.data);
+    pdfText = data.text;
+  } catch (e) {
+    return res.status(400).json({ error: "Could not read PDF. Make sure it's a valid PDF file." });
+  }
+
+  if (!pdfText || pdfText.trim().length < 20) {
+    return res.status(400).json({ error: "PDF appears to be empty or image-only. Try a text-based PDF (print-to-PDF from a recipe site)." });
+  }
+
+  const ingredients = extractIngredientsFromText(pdfText);
+  const name = extractRecipeName(pdfText);
+
+  return res.status(200).json({ name, ingredients });
+}
+
+// ─── Multipart parser ─────────────────────────────────────────────────────────
+
+function parseMultipart(body, boundary) {
+  const parts = [];
+  const sep = Buffer.from(`--${boundary}`);
+  let start = 0;
+
+  while (start < body.length) {
+    const sepIdx = indexOf(body, sep, start);
+    if (sepIdx === -1) break;
+    const headerStart = sepIdx + sep.length + 2;
+    const headerEnd = indexOf(body, Buffer.from("\r\n\r\n"), headerStart);
+    if (headerEnd === -1) break;
+    const headerText = body.slice(headerStart, headerEnd).toString();
+    const dataStart = headerEnd + 4;
+    const nextSep = indexOf(body, sep, dataStart);
+    const dataEnd = nextSep === -1 ? body.length : nextSep - 2;
+    const data = body.slice(dataStart, dataEnd);
+    const filenameMatch = headerText.match(/filename="([^"]+)"/);
+    const contentTypeMatch = headerText.match(/Content-Type:\s*([^\r\n]+)/i);
+    parts.push({
+      filename: filenameMatch ? filenameMatch[1] : "",
+      contentType: contentTypeMatch ? contentTypeMatch[1].trim() : "",
+      data,
+    });
+    start = nextSep === -1 ? body.length : nextSep;
+  }
+  return parts;
+}
+
+function indexOf(buffer, search, start = 0) {
+  for (let i = start; i <= buffer.length - search.length; i++) {
+    let found = true;
+    for (let j = 0; j < search.length; j++) {
+      if (buffer[i + j] !== search[j]) { found = false; break; }
+    }
+    if (found) return i;
+  }
+  return -1;
 }
