@@ -240,13 +240,18 @@ export default function App() {
 
   if (recipes === null) return <LoadingScreen />;
 
-  // Aggregate ingredients from selected meals
+  // NEW
   const aggregatedIngredients = {};
   selectedMeals.forEach((id) => {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) return;
-    (recipe.ingredients || []).forEach((ing) => {
-      aggregatedIngredients[ing] = (aggregatedIngredients[ing] || 0) + 1;
+    (recipe.ingredients || []).forEach((raw) => {
+      const name = typeof raw === "string" ? raw : raw.name;
+      const qty = typeof raw === "string" ? "" : (raw.quantity || "");
+      if (!name) return;
+      if (!aggregatedIngredients[name]) aggregatedIngredients[name] = { count: 0, quantities: [] };
+      aggregatedIngredients[name].count += 1;
+      if (qty) aggregatedIngredients[name].quantities.push(qty);
     });
   });
 
@@ -255,11 +260,11 @@ export default function App() {
   // Build shopping list grouped by section
   const shoppingListBySection = (() => {
     const map = {};
-    Object.entries(aggregatedIngredients).forEach(([name, count]) => {
+    Object.entries(aggregatedIngredients).forEach(([name, info]) => {
       if (pantryItems.includes(name)) return;
       const sec = getSection(name, sections);
       if (!map[sec]) map[sec] = [];
-      map[sec].push({ name, count, source: "recipe" });
+      map[sec].push({ name, count: info.count, quantities: info.quantities, source: "recipe" });
     });
     extras.filter((e) => e.active).forEach((e) => {
       const sec = getSection(e.name, sections);
@@ -276,9 +281,8 @@ export default function App() {
       }));
   })();
 
-  const pantrySkipCount = pantryItems.filter((p) =>
-    Object.prototype.hasOwnProperty.call(aggregatedIngredients, p)
-  ).length;
+  // NEW
+  const pantrySkipCount = pantryItems.filter((p) => aggregatedIngredients[p]).length;;
   const totalShoppingItems = shoppingListBySection.reduce(
     (s, g) => s + g.items.length, 0
   );
@@ -350,9 +354,15 @@ export default function App() {
         }))
       );
       const newSections = { ...sections };
-      newIngredients.forEach((i) => { newSections[i] = "Other"; });
-      setSections(newSections);
-    }
+      const toUpsert = [];
+      recipe.ingredients.forEach((raw) => {
+        const name = typeof raw === "string" ? raw : raw.name;
+        if (name && !newSections[name]) {
+          newSections[name] = detectSection(name);
+          toUpsert.push({ ingredient: name, section: newSections[name], sort_order: sectionOrder(newSections[name]) });
+        }
+      });
+      if (toUpsert.length) { setSections(newSections); await supabase.from("sections").upsert(toUpsert); }
 
     if (recipe.id && !recipe.id.startsWith("new")) {
       // Update existing
@@ -583,7 +593,7 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe }) {
         </button>
       </div>
       <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
-        {["All", ...CATEGORIES].map((c) => (
+        {["All", ...RECIPE_CATEGORIES].map((c) => (
           <button
             key={c}
             onClick={() => setFilterCat(c)}
@@ -975,7 +985,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
           <div>
             <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">category</label>
             <div className="flex gap-1.5 mt-1.5 flex-wrap">
-              {CATEGORIES.map((c) => (
+              {RECIPE_CATEGORIES.map((c) => (
                 <button
                   key={c}
                   onClick={() => setCategory(c)}
