@@ -153,45 +153,14 @@ async function upsertSection(ingredient, section) {
 // URL IMPORTER — uses Claude API to extract recipe info
 // --------------------------------------------------------------------------
 async function importFromUrl(url) {
-  // First fetch the page HTML via a CORS proxy
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-  const res = await fetch(proxyUrl);
-  if (!res.ok) throw new Error("Could not fetch that URL");
-  const data = await res.json();
-  const html = data.contents || "";
-
-  // Strip tags to get plain text (limit size)
-  const text = html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .slice(0, 8000);
-
-  // Ask Claude to extract recipe data
-  const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("/api/import-recipe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      system: `You are a recipe parser. Extract recipe information from webpage text and return ONLY valid JSON with no markdown, no backticks, no explanation. The JSON must have exactly these fields:
-{
-  "name": "Recipe Name",
-  "ingredients": ["Ingredient 1", "Ingredient 2"]
-}
-Ingredients should be simple names only (no quantities, no prep notes). Example: "Chicken" not "2 lbs boneless chicken breast, cut into pieces". If you cannot find a recipe, return {"name": "", "ingredients": []}.`,
-      messages: [{ role: "user", content: `Extract the recipe from this webpage text:\n\n${text}` }],
-    }),
+    body: JSON.stringify({ url }),
   });
-
-  if (!apiRes.ok) throw new Error("Claude API error");
-  const apiData = await apiRes.json();
-  const raw = apiData.content?.[0]?.text || "{}";
-
-  // Strip any accidental markdown fences
-  const cleaned = raw.replace(/```json|```/g, "").trim();
-  const parsed = JSON.parse(cleaned);
+  if (!res.ok) throw new Error("Import failed");
+  const parsed = await res.json();
+  if (parsed.error) throw new Error(parsed.error);
   return {
     name: parsed.name || "",
     ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
