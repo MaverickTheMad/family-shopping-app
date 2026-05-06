@@ -629,7 +629,7 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe }) {
                     </div>
                     {r.ingredients && r.ingredients.length > 0 ? (
                       <div className="text-xs text-stone-500 truncate mt-0.5">
-                        {r.ingredients.slice(0, 4).join(" · ")}
+                        {r.ingredients.slice(0, 4).map((i) => typeof i === "string" ? i : i.name).join(" · ")}
                         {r.ingredients.length > 4 && ` +${r.ingredients.length - 4}`}
                       </div>
                     ) : (
@@ -694,7 +694,8 @@ function PantryTab({ ingredients, counts, pantryItems, onToggle, skipCount, sect
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
               {grouped[sec].sort().map((ing) => {
                 const have = pantryItems.includes(ing);
-                const count = counts[ing];
+                const info = counts[ing];
+                const qty = info?.quantities?.[0] || "";
                 return (
                   <button
                     key={ing}
@@ -704,12 +705,13 @@ function PantryTab({ ingredients, counts, pantryItems, onToggle, skipCount, sect
                     }`}
                   >
                     <Checkbox checked={have} green />
-                    <span className={`flex-1 text-sm ${have ? "text-stone-400 strike-through" : "text-stone-800"}`}>
-                      {ing}
-                    </span>
-                    {count > 1 && (
-                      <span className="text-[10px] font-semibold text-amber-800/80 bg-amber-100/60 rounded-full px-2 py-0.5">
-                        ×{count}
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm ${have ? "text-stone-400 strike-through" : "text-stone-800"}`}>{ing}</div>
+                      {qty && <div className="text-[11px] text-stone-400 mt-0.5">{qty}</div>}
+                    </div>
+                    {info?.count > 1 && (
+                      <span className="text-[10px] font-semibold text-amber-800/80 bg-amber-100/60 rounded-full px-2 py-0.5 shrink-0">
+                        ×{info.count}
                       </span>
                     )}
                   </button>
@@ -811,20 +813,23 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
             <div className="bg-white rounded-xl border border-stone-200/70 card-shadow divide-y divide-stone-100">
               {g.items.map((item) => {
                 const isChecked = checked.includes(item.name);
+                const qtyDisplay = item.quantities && item.quantities.length > 0 ? item.quantities.join(" + ") : "";
                 return (
                   <div key={item.name} className={`flex items-center gap-3 px-4 py-3 transition-colors ${isChecked ? "bg-stone-50" : ""}`}>
-                    <button onClick={() => onToggle(item.name)} className="flex items-center gap-3 flex-1 text-left">
+                    <button onClick={() => onToggle(item.name)} className="flex items-center gap-3 flex-1 text-left min-w-0">
                       <Checkbox checked={isChecked} />
-                      <span className={`flex-1 ${isChecked ? "text-stone-400 strike-through" : "text-stone-900 font-medium"}`}>
-                        {item.name}
-                      </span>
-                      {item.count > 1 && (
-                        <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${isChecked ? "text-stone-400 bg-stone-100" : "text-amber-800 bg-amber-100/70"}`}>
-                          ×{item.count}
-                        </span>
-                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className={`font-medium truncate ${isChecked ? "text-stone-400 strike-through" : "text-stone-900"}`}>
+                          {item.name}
+                        </div>
+                        {(qtyDisplay || item.count > 1) && (
+                          <div className={`text-xs mt-0.5 ${isChecked ? "text-stone-400" : "text-stone-500"}`}>
+                            {qtyDisplay}{item.count > 1 ? ` · needed for ${item.count} recipes` : ""}
+                          </div>
+                        )}
+                      </div>
                     </button>
-                    <button onClick={() => setReassigning(reassigning === item.name ? null : item.name)} className="text-stone-300 hover:text-stone-600 text-xs px-1">
+                    <button onClick={() => setReassigning(reassigning === item.name ? null : item.name)} className="text-stone-300 hover:text-stone-600 text-base px-1 shrink-0">
                       ⋯
                     </button>
                   </div>
@@ -864,10 +869,13 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   const [name, setName] = useState(recipe.name);
   const [url, setUrl] = useState(recipe.url || "");
   const [category, setCategory] = useState(recipe.category || "Other");
-  const [ingredients, setIngredients] = useState(recipe.ingredients || []).map((i) =>
-    typeof i === "string" ? { name: i, quantity: "" } : { name: i.name || "", quantity: i.quantity || "" }
+  const [ingredients, setIngredients] = useState(
+    (recipe.ingredients || []).map((i) =>
+      typeof i === "string" ? { name: i, quantity: "" } : { name: i.name || "", quantity: i.quantity || "" }
+    )
   );
-  const [newIng, setNewIng] = useState("");
+  const [newIngName, setNewIngName] = useState("");
+  const [newIngQty, setNewIngQty] = useState("");
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
@@ -895,10 +903,11 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   }
 
   function addIngredient() {
-    if (!newIng.trim()) return;
-    const parts = newIng.split(",").map((s) => s.trim()).filter(Boolean);
-    setIngredients([...ingredients, ...parts]);
-    setNewIng("");
+    if (!newIngName.trim()) return;
+    const parts = newIngName.split(",").map((s) => s.trim()).filter(Boolean);
+    setIngredients([...ingredients, ...parts.map((n, i) => ({ name: n, quantity: i === 0 && parts.length === 1 ? newIngQty : "" }))]);
+    setNewIngName("");
+    setNewIngQty("");
   }
 
   function removeIngredient(idx) {
@@ -1006,28 +1015,40 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
             </label>
             <div className="flex gap-2 mt-1.5">
               <input
-                value={newIng}
-                onChange={(e) => setNewIng(e.target.value)}
+                value={newIngQty}
+                onChange={(e) => setNewIngQty(e.target.value)}
+                placeholder="qty"
+                className="w-20 px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 shrink-0"
+              />
+              <input
+                value={newIngName}
+                onChange={(e) => setNewIngName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addIngredient()}
-                placeholder="add ingredient (or paste comma-separated)"
+                placeholder="ingredient name (comma-separate for multiple)"
                 className="flex-1 px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10"
               />
-              <button onClick={addIngredient} className="bg-stone-900 text-amber-50 px-3 rounded-lg hover:bg-stone-800">
+              <button onClick={addIngredient} className="bg-stone-900 text-amber-50 px-3 rounded-lg hover:bg-stone-800 shrink-0">
                 <Plus className="w-4 h-4" />
               </button>
             </div>
-            <div className="mt-3 space-y-1 max-h-48 overflow-y-auto">
+            <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
               {ingredients.map((ing, idx) => (
                 <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-white border border-stone-200 rounded-lg">
-                  <span className="text-sm text-stone-800 flex-1">{ing}</span>
+                  <input
+                    value={ing.quantity || ""}
+                    onChange={(e) => setIngredients((prev) => prev.map((x, i) => i === idx ? { ...x, quantity: e.target.value } : x))}
+                    placeholder="qty"
+                    className="w-20 text-xs bg-stone-50 border border-stone-200 rounded px-2 py-1 focus:outline-none focus:border-amber-700/50 shrink-0 text-stone-600"
+                  />
+                  <span className="text-sm text-stone-800 flex-1 min-w-0 truncate">{ing.name}</span>
                   <select
-                    value={getSection(ing, sections)}
-                    onChange={(e) => onSetSection(ing, e.target.value)}
-                    className="text-[10px] uppercase tracking-wider bg-stone-100 px-2 py-1 rounded-md text-stone-600 border-0 focus:outline-none"
+                    value={getSection(ing.name, sections)}
+                    onChange={(e) => onSetSection(ing.name, e.target.value)}
+                    className="text-[10px] uppercase tracking-wider bg-stone-100 px-2 py-1 rounded-md text-stone-600 border-0 focus:outline-none shrink-0 max-w-[110px]"
                   >
                     {SECTION_ORDER.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
-                  <button onClick={() => removeIngredient(idx)} className="text-stone-300 hover:text-red-700">
+                  <button onClick={() => removeIngredient(idx)} className="text-stone-300 hover:text-red-700 shrink-0">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
