@@ -1,22 +1,20 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
 import {
-  ChefHat,
-  ShoppingCart,
-  Package,
-  PlusCircle,
-  Search,
-  X,
-  Check,
-  Trash2,
-  Edit3,
-  ExternalLink,
-  RefreshCw,
-  Plus,
-  Save,
+  ChefHat, ShoppingCart, Package, PlusCircle, Search, X, Check,
+  Trash2, Edit3, ExternalLink, RefreshCw, Plus, Save, Link, Loader2,
 } from "lucide-react";
 
 // --------------------------------------------------------------------------
-// SEED DATA (from your Google Sheet)
+// SUPABASE
+// --------------------------------------------------------------------------
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
+// --------------------------------------------------------------------------
+// SEED DATA
 // --------------------------------------------------------------------------
 const SEED_RECIPES = [
   { name: "Balsamic Pork Medallions", url: "https://www.nourish-and-fete.com/wprm_print/balsamic-pork-tenderloin-medallions", category: "Other", ingredients: ["Pork Tenderloin","Thyme","Rosemary","Sweet Paprika","Garlic Powder","Butter","Chicken Broth","Balsamic Vinaigrette"] },
@@ -48,256 +46,361 @@ const SEED_EXTRAS = [
 ];
 
 const SEED_SECTIONS = {
-  // Produce
   "Basil":"Produce","Broccoli":"Produce","Carrots":"Produce","Celery":"Produce","Garlic":"Produce","Garlic Cloves":"Produce","Green Beans":"Produce","Jarlic":"Produce","Lemon":"Produce","Minced Garlic":"Produce","Onion":"Produce","Oregano":"Produce","Parsley":"Produce","Peppers":"Produce","Potatoes":"Produce","Rosemary":"Produce","Sage":"Produce","Small Potatoes":"Produce","Spinach":"Produce","Thyme":"Produce","Little Potatoes":"Produce",
-  // Bakery
   "Flatbread":"Bakery","Hawaiian Rolls":"Bakery","Tortilla Shells":"Bakery","Bagels":"Bakery","Bread":"Bakery",
-  // Dairy
   "Boursin Cheese":"Dairy","Butter":"Dairy","Cheddar Cheese":"Dairy","Cheese Tortellini":"Dairy","Egg":"Dairy","Heavy Cream":"Dairy","Mozzarella":"Dairy","Parmesan":"Dairy","Pepper Jack Cheese":"Dairy","Queso Fresco":"Dairy","Ricotta":"Dairy","Shredded Cheddar":"Dairy","Shredded Cheese":"Dairy","Oatmilk":"Dairy","Cold Foam":"Dairy","Keifer":"Dairy",
-  // Meat
   "Beef Roast":"Meat","Chicken":"Meat","Deli Ham":"Meat","Ground Beef":"Meat","Ground Sausage":"Meat","Kielbasa":"Meat","Pepperoni":"Meat","Pork Tenderloin":"Meat","Ribeye Steak":"Meat","Spicy Sausage":"Meat","Steak":"Meat","Ham":"Meat","Salami":"Meat",
-  // Dry Goods
   "Avocado Oil":"Dry Goods","Balsamic Vinaigrette":"Dry Goods","Bay leaves":"Dry Goods","Beef Bouillon Cubes":"Dry Goods","Beef Broth":"Dry Goods","Black Pepper":"Dry Goods","Breadcrumbs":"Dry Goods","Cabernet Sauvignon":"Dry Goods","Calabrian Chili Peppers":"Dry Goods","Calabrian Peppers":"Dry Goods","Chicken Bouillon":"Dry Goods","Chicken Broth":"Dry Goods","Chicken Rice":"Dry Goods","Chicken Stock":"Dry Goods","Corn Starch":"Dry Goods","Cornstarch":"Dry Goods","Dijon Mustard":"Dry Goods","Fire Roasted Tomatoes":"Dry Goods","Flour":"Dry Goods","Garlic Powder":"Dry Goods","Honey":"Dry Goods","Italian Seasoning":"Dry Goods","Lime Chips":"Dry Goods","Marinara":"Dry Goods","Noodles":"Dry Goods","Onion Powder":"Dry Goods","Orzo":"Dry Goods","Paprika":"Dry Goods","Pasta":"Dry Goods","Pasta Sauce":"Dry Goods","Poppy Seeds":"Dry Goods","Red Pepper Flakes":"Dry Goods","Rice":"Dry Goods","Salt":"Dry Goods","Sandwhich Pickles":"Dry Goods","Soy Sauce":"Dry Goods","Sweet Paprika":"Dry Goods","Tomato Paste":"Dry Goods","Tomato Sauce":"Dry Goods","White Pepper":"Dry Goods","White Wine":"Dry Goods","Worcestershire Sauce":"Dry Goods","Cereal":"Dry Goods","Breakfast Crackers":"Dry Goods","Chocolate Chips":"Dry Goods",
-  // Frozen
   "Chicken Nugs":"Frozen","Meatballs":"Frozen",
-  // Household
   "Toilet Paper":"Household","Paper Plates (Small)":"Household","Paper Plates (Large)":"Household",
 };
 
 const SECTION_ORDER = ["Produce","Bakery","Dairy","Meat","Dry Goods","Frozen","Household","Other"];
 const CATEGORIES = ["Soup","Sandwich","Steak","Chicken","Other"];
 
-const STORAGE_KEY = "shopping-app-data-v1";
-
-// --------------------------------------------------------------------------
-// PERSISTENCE
-// --------------------------------------------------------------------------
-// Replace loadData() with:
-async function loadData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  // initialize with seed data
-  const recipes = SEED_RECIPES.map((r, i) => ({
-    id: "r_" + i + "_" + Date.now(),
-    ...r,
-  }));
-  return {
-    recipes,
-    sections: { ...SEED_SECTIONS },
-    selectedMeals: [],
-    pantryItems: [],
-    extraItems: SEED_EXTRAS.map((name, i) => ({ id: "e_" + i, name, active: false })),
-    checkedShoppingItems: [],
-  };
-}
-
-// Replace saveData() with:
-async function saveData(data) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error("save failed", e);
-  }
-}
-
 // --------------------------------------------------------------------------
 // HELPERS
 // --------------------------------------------------------------------------
-function uid(prefix = "id") {
-  return prefix + "_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
-}
-
 function getSection(name, sections) {
   return sections[name] || "Other";
 }
-
 function sectionOrder(s) {
   const i = SECTION_ORDER.indexOf(s);
   return i === -1 ? 999 : i;
 }
 
 // --------------------------------------------------------------------------
+// DB LAYER
+// --------------------------------------------------------------------------
+async function seedIfEmpty() {
+  // Check if recipes table is empty
+  const { count } = await supabase
+    .from("recipes")
+    .select("*", { count: "exact", head: true });
+
+  if (count === 0) {
+    // Seed recipes
+    await supabase.from("recipes").insert(
+      SEED_RECIPES.map((r) => ({
+        name: r.name,
+        url: r.url || null,
+        category: r.category,
+        ingredients: r.ingredients,
+      }))
+    );
+    // Seed extras
+    await supabase.from("extras").insert(
+      SEED_EXTRAS.map((name, i) => ({ name, active: false, sort_order: i }))
+    );
+    // Seed sections
+    await supabase.from("sections").insert(
+      Object.entries(SEED_SECTIONS).map(([ingredient, section]) => ({
+        ingredient,
+        section,
+        sort_order: sectionOrder(section),
+      }))
+    );
+  }
+}
+
+async function fetchAll() {
+  const [recipesRes, extrasRes, sectionsRes, stateRes] = await Promise.all([
+    supabase.from("recipes").select("*").order("name"),
+    supabase.from("extras").select("*").order("sort_order"),
+    supabase.from("sections").select("*"),
+    supabase.from("shopping_state").select("*").eq("id", "current").single(),
+  ]);
+
+  const sections = {};
+  (sectionsRes.data || []).forEach((r) => {
+    sections[r.ingredient] = r.section;
+  });
+
+  const state = stateRes.data || {
+    selected_meals: [],
+    pantry_items: [],
+    checked_items: [],
+  };
+
+  return {
+    recipes: recipesRes.data || [],
+    extras: extrasRes.data || [],
+    sections,
+    selectedMeals: state.selected_meals || [],
+    pantryItems: state.pantry_items || [],
+    checkedItems: state.checked_items || [],
+  };
+}
+
+async function saveState(selectedMeals, pantryItems, checkedItems) {
+  await supabase.from("shopping_state").upsert({
+    id: "current",
+    selected_meals: selectedMeals,
+    pantry_items: pantryItems,
+    checked_items: checkedItems,
+  });
+}
+
+async function upsertSection(ingredient, section) {
+  await supabase.from("sections").upsert({
+    ingredient,
+    section,
+    sort_order: sectionOrder(section),
+  });
+}
+
+// --------------------------------------------------------------------------
+// URL IMPORTER — uses Claude API to extract recipe info
+// --------------------------------------------------------------------------
+async function importFromUrl(url) {
+  // First fetch the page HTML via a CORS proxy
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error("Could not fetch that URL");
+  const data = await res.json();
+  const html = data.contents || "";
+
+  // Strip tags to get plain text (limit size)
+  const text = html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 8000);
+
+  // Ask Claude to extract recipe data
+  const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: `You are a recipe parser. Extract recipe information from webpage text and return ONLY valid JSON with no markdown, no backticks, no explanation. The JSON must have exactly these fields:
+{
+  "name": "Recipe Name",
+  "ingredients": ["Ingredient 1", "Ingredient 2"]
+}
+Ingredients should be simple names only (no quantities, no prep notes). Example: "Chicken" not "2 lbs boneless chicken breast, cut into pieces". If you cannot find a recipe, return {"name": "", "ingredients": []}.`,
+      messages: [{ role: "user", content: `Extract the recipe from this webpage text:\n\n${text}` }],
+    }),
+  });
+
+  if (!apiRes.ok) throw new Error("Claude API error");
+  const apiData = await apiRes.json();
+  const raw = apiData.content?.[0]?.text || "{}";
+
+  // Strip any accidental markdown fences
+  const cleaned = raw.replace(/```json|```/g, "").trim();
+  const parsed = JSON.parse(cleaned);
+  return {
+    name: parsed.name || "",
+    ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
+  };
+}
+
+// --------------------------------------------------------------------------
 // MAIN APP
 // --------------------------------------------------------------------------
 export default function App() {
-  const [data, setData] = useState(null);
+  const [recipes, setRecipes] = useState(null);
+  const [extras, setExtras] = useState([]);
+  const [sections, setSections] = useState({});
+  const [selectedMeals, setSelectedMeals] = useState([]);
+  const [pantryItems, setPantryItems] = useState([]);
+  const [checkedItems, setCheckedItems] = useState([]);
   const [tab, setTab] = useState("meals");
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [toast, setToast] = useState("");
-  const saveTimer = useRef(null);
+  const stateTimer = useRef(null);
 
-  // Load on mount
+  // Load everything on mount
   useEffect(() => {
-    loadData().then(setData);
+    async function init() {
+      await seedIfEmpty();
+      const d = await fetchAll();
+      setRecipes(d.recipes);
+      setExtras(d.extras);
+      setSections(d.sections);
+      setSelectedMeals(d.selectedMeals);
+      setPantryItems(d.pantryItems);
+      setCheckedItems(d.checkedItems);
+    }
+    init();
   }, []);
 
-  // Save when data changes (debounced)
+  // Debounced state save whenever shopping state changes
   useEffect(() => {
-    if (!data) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => saveData(data), 400);
-  }, [data]);
+    if (recipes === null) return; // not loaded yet
+    if (stateTimer.current) clearTimeout(stateTimer.current);
+    stateTimer.current = setTimeout(
+      () => saveState(selectedMeals, pantryItems, checkedItems),
+      600
+    );
+  }, [selectedMeals, pantryItems, checkedItems]);
 
   function showToast(msg) {
     setToast(msg);
-    setTimeout(() => setToast(""), 1800);
+    setTimeout(() => setToast(""), 2000);
   }
 
-  if (!data) return <LoadingScreen />;
+  if (recipes === null) return <LoadingScreen />;
 
   // Aggregate ingredients from selected meals
-  const aggregatedIngredients = (() => {
-    const counts = {};
-    data.selectedMeals.forEach((id) => {
-      const recipe = data.recipes.find((r) => r.id === id);
-      if (!recipe) return;
-      recipe.ingredients.forEach((ing) => {
-        counts[ing] = (counts[ing] || 0) + 1;
-      });
+  const aggregatedIngredients = {};
+  selectedMeals.forEach((id) => {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return;
+    (recipe.ingredients || []).forEach((ing) => {
+      aggregatedIngredients[ing] = (aggregatedIngredients[ing] || 0) + 1;
     });
-    return counts;
-  })();
+  });
 
   const allIngredientsList = Object.keys(aggregatedIngredients).sort();
 
-  // Build the final shopping list grouped by section
+  // Build shopping list grouped by section
   const shoppingListBySection = (() => {
     const map = {};
-    // Recipe ingredients NOT in pantry
     Object.entries(aggregatedIngredients).forEach(([name, count]) => {
-      if (data.pantryItems.includes(name)) return;
-      const sec = getSection(name, data.sections);
+      if (pantryItems.includes(name)) return;
+      const sec = getSection(name, sections);
       if (!map[sec]) map[sec] = [];
       map[sec].push({ name, count, source: "recipe" });
     });
-    // Active extras
-    data.extraItems.filter((e) => e.active).forEach((e) => {
-      const sec = getSection(e.name, data.sections);
+    extras.filter((e) => e.active).forEach((e) => {
+      const sec = getSection(e.name, sections);
       if (!map[sec]) map[sec] = [];
-      // merge if already exists
       const existing = map[sec].find((it) => it.name === e.name);
       if (existing) existing.count += 1;
       else map[sec].push({ name: e.name, count: 1, source: "extra" });
     });
-    // sort each section alphabetically and sort sections
-    const sortedSections = Object.keys(map).sort(
-      (a, b) => sectionOrder(a) - sectionOrder(b)
-    );
-    return sortedSections.map((sec) => ({
-      section: sec,
-      items: map[sec].sort((a, b) => a.name.localeCompare(b.name)),
-    }));
+    return Object.keys(map)
+      .sort((a, b) => sectionOrder(a) - sectionOrder(b))
+      .map((sec) => ({
+        section: sec,
+        items: map[sec].sort((a, b) => a.name.localeCompare(b.name)),
+      }));
   })();
 
-  const selectedCount = data.selectedMeals.length;
-  const pantrySkipCount = data.pantryItems.filter((p) =>
+  const pantrySkipCount = pantryItems.filter((p) =>
     Object.prototype.hasOwnProperty.call(aggregatedIngredients, p)
   ).length;
   const totalShoppingItems = shoppingListBySection.reduce(
-    (sum, s) => sum + s.items.length,
-    0
+    (s, g) => s + g.items.length, 0
   );
 
-  // ------------------------------------------------------------------------
-  // ACTIONS
-  // ------------------------------------------------------------------------
+  // ---- ACTIONS ----
+
   function toggleMeal(id) {
-    setData((d) => ({
-      ...d,
-      selectedMeals: d.selectedMeals.includes(id)
-        ? d.selectedMeals.filter((x) => x !== id)
-        : [...d.selectedMeals, id],
-    }));
+    setSelectedMeals((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   }
+
   function togglePantry(name) {
-    setData((d) => ({
-      ...d,
-      pantryItems: d.pantryItems.includes(name)
-        ? d.pantryItems.filter((x) => x !== name)
-        : [...d.pantryItems, name],
-    }));
+    setPantryItems((prev) =>
+      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
+    );
   }
-  function toggleExtra(id) {
-    setData((d) => ({
-      ...d,
-      extraItems: d.extraItems.map((e) =>
-        e.id === id ? { ...e, active: !e.active } : e
-      ),
-    }));
+
+  async function toggleExtra(id) {
+    const extra = extras.find((e) => e.id === id);
+    if (!extra) return;
+    const updated = { ...extra, active: !extra.active };
+    await supabase.from("extras").update({ active: updated.active }).eq("id", id);
+    setExtras((prev) => prev.map((e) => (e.id === id ? updated : e)));
   }
-  function addExtra(name) {
+
+  async function addExtra(name) {
     if (!name.trim()) return;
-    setData((d) => ({
-      ...d,
-      extraItems: [
-        ...d.extraItems,
-        { id: uid("e"), name: name.trim(), active: true },
-      ],
-    }));
+    const { data } = await supabase
+      .from("extras")
+      .insert({ name: name.trim(), active: true, sort_order: extras.length })
+      .select()
+      .single();
+    if (data) setExtras((prev) => [...prev, data]);
   }
-  function deleteExtra(id) {
-    setData((d) => ({ ...d, extraItems: d.extraItems.filter((e) => e.id !== id) }));
+
+  async function deleteExtra(id) {
+    await supabase.from("extras").delete().eq("id", id);
+    setExtras((prev) => prev.filter((e) => e.id !== id));
   }
+
   function toggleShoppingChecked(name) {
-    setData((d) => ({
-      ...d,
-      checkedShoppingItems: d.checkedShoppingItems.includes(name)
-        ? d.checkedShoppingItems.filter((x) => x !== name)
-        : [...d.checkedShoppingItems, name],
-    }));
+    setCheckedItems((prev) =>
+      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
+    );
   }
-  function startNewTrip() {
-    if (
-      !confirm(
-        "Start a new shopping trip? This clears selected meals, pantry checks, extras you added, and shopping check-offs. Recipes are kept."
-      )
-    )
-      return;
-    setData((d) => ({
-      ...d,
-      selectedMeals: [],
-      pantryItems: [],
-      extraItems: d.extraItems.map((e) => ({ ...e, active: false })),
-      checkedShoppingItems: [],
-    }));
+
+  async function handleSetSection(ing, section) {
+    setSections((prev) => ({ ...prev, [ing]: section }));
+    await upsertSection(ing, section);
+  }
+
+  async function saveRecipe(recipe) {
+    const payload = {
+      name: recipe.name,
+      url: recipe.url || null,
+      category: recipe.category,
+      ingredients: recipe.ingredients,
+    };
+
+    // Upsert any new ingredient sections
+    const newIngredients = recipe.ingredients.filter((i) => !sections[i]);
+    if (newIngredients.length > 0) {
+      await supabase.from("sections").upsert(
+        newIngredients.map((ingredient) => ({
+          ingredient,
+          section: "Other",
+          sort_order: 99,
+        }))
+      );
+      const newSections = { ...sections };
+      newIngredients.forEach((i) => { newSections[i] = "Other"; });
+      setSections(newSections);
+    }
+
+    if (recipe.id && !recipe.id.startsWith("new")) {
+      // Update existing
+      const { data } = await supabase
+        .from("recipes")
+        .update(payload)
+        .eq("id", recipe.id)
+        .select()
+        .single();
+      if (data) setRecipes((prev) => prev.map((r) => (r.id === recipe.id ? data : r)));
+      showToast("Recipe saved");
+    } else {
+      // Insert new
+      const { data } = await supabase
+        .from("recipes")
+        .insert(payload)
+        .select()
+        .single();
+      if (data) setRecipes((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+      showToast("Recipe added");
+    }
+    setEditingRecipe(null);
+  }
+
+  async function deleteRecipe(id) {
+    if (!confirm("Delete this recipe?")) return;
+    await supabase.from("recipes").delete().eq("id", id);
+    setRecipes((prev) => prev.filter((r) => r.id !== id));
+    setSelectedMeals((prev) => prev.filter((x) => x !== id));
+    setEditingRecipe(null);
+    showToast("Recipe deleted");
+  }
+
+  async function startNewTrip() {
+    if (!confirm("Start a new trip? Clears selected meals, pantry checks, and shopping check-offs. Recipes and extras are kept.")) return;
+    setSelectedMeals([]);
+    setPantryItems([]);
+    setCheckedItems([]);
+    // Reset extras active state
+    await supabase.from("extras").update({ active: false }).neq("id", "00000000-0000-0000-0000-000000000000");
+    setExtras((prev) => prev.map((e) => ({ ...e, active: false })));
     showToast("Fresh trip started");
     setTab("meals");
-  }
-  function saveRecipe(recipe) {
-    setData((d) => {
-      const exists = d.recipes.find((r) => r.id === recipe.id);
-      let updated;
-      if (exists) {
-        updated = d.recipes.map((r) => (r.id === recipe.id ? recipe : r));
-      } else {
-        updated = [...d.recipes, recipe];
-      }
-      // also add any new ingredients to sections (default Other)
-      const newSections = { ...d.sections };
-      recipe.ingredients.forEach((ing) => {
-        if (!newSections[ing]) newSections[ing] = "Other";
-      });
-      return { ...d, recipes: updated, sections: newSections };
-    });
-    showToast(recipe.id.startsWith("new") ? "Recipe added" : "Recipe saved");
-    setEditingRecipe(null);
-  }
-  function deleteRecipe(id) {
-    if (!confirm("Delete this recipe?")) return;
-    setData((d) => ({
-      ...d,
-      recipes: d.recipes.filter((r) => r.id !== id),
-      selectedMeals: d.selectedMeals.filter((x) => x !== id),
-    }));
-    setEditingRecipe(null);
-  }
-  function setIngredientSection(ing, section) {
-    setData((d) => ({
-      ...d,
-      sections: { ...d.sections, [ing]: section },
-    }));
   }
 
   return (
@@ -314,66 +417,52 @@ export default function App() {
         }
         .card-shadow { box-shadow: 0 1px 0 rgba(58,42,28,0.04), 0 2px 8px -2px rgba(58,42,28,0.08); }
         .ridge { background-image: repeating-linear-gradient(90deg, transparent 0 7px, rgba(58,42,28,0.05) 7px 8px); }
-        .checkbox-tick { transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1); }
         @keyframes slidein { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .slidein { animation: slidein 0.25s ease-out both; }
         .strike-through { text-decoration: line-through; text-decoration-color: rgba(160,69,39,0.6); text-decoration-thickness: 2px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin { animation: spin 1s linear infinite; }
       `}</style>
 
       <div className="paper-bg min-h-screen pb-28">
-        <Header
-          selectedCount={selectedCount}
-          totalShoppingItems={totalShoppingItems}
-          onNewTrip={startNewTrip}
-        />
+        <Header onNewTrip={startNewTrip} />
 
         <main className="max-w-3xl mx-auto px-4 pt-2">
           {tab === "meals" && (
             <MealsTab
-              recipes={data.recipes}
-              selected={data.selectedMeals}
+              recipes={recipes}
+              selected={selectedMeals}
               onToggle={toggleMeal}
               onEdit={(r) => setEditingRecipe(r)}
-              onAddRecipe={() =>
-                setEditingRecipe({
-                  id: uid("new"),
-                  name: "",
-                  url: "",
-                  category: "Other",
-                  ingredients: [],
-                })
-              }
+              onAddRecipe={() => setEditingRecipe({ id: "new", name: "", url: "", category: "Other", ingredients: [] })}
             />
           )}
-
           {tab === "pantry" && (
             <PantryTab
               ingredients={allIngredientsList}
               counts={aggregatedIngredients}
-              pantryItems={data.pantryItems}
+              pantryItems={pantryItems}
               onToggle={togglePantry}
               skipCount={pantrySkipCount}
-              sections={data.sections}
+              sections={sections}
             />
           )}
-
           {tab === "extras" && (
             <ExtrasTab
-              extras={data.extraItems}
+              extras={extras}
               onToggle={toggleExtra}
               onAdd={addExtra}
               onDelete={deleteExtra}
             />
           )}
-
           {tab === "list" && (
             <ListTab
               groups={shoppingListBySection}
-              checked={data.checkedShoppingItems}
+              checked={checkedItems}
               onToggle={toggleShoppingChecked}
               total={totalShoppingItems}
-              sections={data.sections}
-              onSetSection={setIngredientSection}
+              sections={sections}
+              onSetSection={handleSetSection}
             />
           )}
         </main>
@@ -382,9 +471,9 @@ export default function App() {
           tab={tab}
           setTab={setTab}
           counts={{
-            meals: selectedCount,
+            meals: selectedMeals.length,
             pantry: pantrySkipCount,
-            extras: data.extraItems.filter((e) => e.active).length,
+            extras: extras.filter((e) => e.active).length,
             list: totalShoppingItems,
           }}
         />
@@ -392,20 +481,16 @@ export default function App() {
         {editingRecipe && (
           <RecipeEditor
             recipe={editingRecipe}
-            sections={data.sections}
+            sections={sections}
             onSave={saveRecipe}
             onCancel={() => setEditingRecipe(null)}
-            onDelete={
-              !editingRecipe.id.startsWith("new")
-                ? () => deleteRecipe(editingRecipe.id)
-                : null
-            }
-            onSetSection={setIngredientSection}
+            onDelete={editingRecipe.id && !editingRecipe.id.startsWith("new") ? () => deleteRecipe(editingRecipe.id) : null}
+            onSetSection={handleSetSection}
           />
         )}
 
         {toast && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 slidein">
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 slidein pointer-events-none">
             <div className="bg-stone-900 text-amber-50 px-5 py-2.5 rounded-full text-sm font-medium card-shadow">
               {toast}
             </div>
@@ -421,17 +506,11 @@ export default function App() {
 // --------------------------------------------------------------------------
 function LoadingScreen() {
   return (
-    <div className="paper-bg min-h-screen flex items-center justify-center">
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap');`}</style>
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#FBF6EC" }}>
       <div className="text-center">
-        <div className="inline-block animate-spin">
-          <ChefHat className="w-10 h-10 text-stone-400" />
-        </div>
-        <div
-          className="mt-3 text-stone-500 text-sm"
-          style={{ fontFamily: "Fraunces, serif", fontStyle: "italic" }}
-        >
-          gathering ingredients…
+        <Loader2 className="w-8 h-8 text-stone-400 spin mx-auto" />
+        <div className="mt-3 text-stone-500 text-sm" style={{ fontFamily: "Georgia, serif", fontStyle: "italic" }}>
+          loading your kitchen…
         </div>
       </div>
     </div>
@@ -441,14 +520,12 @@ function LoadingScreen() {
 // --------------------------------------------------------------------------
 // HEADER
 // --------------------------------------------------------------------------
-function Header({ selectedCount, totalShoppingItems, onNewTrip }) {
+function Header({ onNewTrip }) {
   return (
     <header className="border-b border-stone-200/70 bg-[#FBF6EC]/80 backdrop-blur-sm sticky top-0 z-30">
       <div className="max-w-3xl mx-auto px-4 py-4 flex items-end justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-stone-500 font-semibold">
-            kitchen + market
-          </div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-stone-500 font-semibold">kitchen + market</div>
           <h1 className="font-display text-3xl sm:text-4xl font-700 leading-none mt-1 text-stone-900">
             <span style={{ fontWeight: 700 }}>Pantry</span>
             <span className="italic font-light text-amber-800/80"> & </span>
@@ -457,13 +534,13 @@ function Header({ selectedCount, totalShoppingItems, onNewTrip }) {
         </div>
         <button
           onClick={onNewTrip}
-          className="text-stone-500 hover:text-amber-800 active:text-amber-900 transition-colors flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full border border-stone-300/70 hover:border-amber-700/40 hover:bg-amber-50/40"
+          className="text-stone-500 hover:text-amber-800 transition-colors flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full border border-stone-300/70 hover:border-amber-700/40 hover:bg-amber-50/40"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           new trip
         </button>
       </div>
-      <div className="ridge h-[3px]"></div>
+      <div className="ridge h-[3px]" />
     </header>
   );
 }
@@ -471,17 +548,14 @@ function Header({ selectedCount, totalShoppingItems, onNewTrip }) {
 // --------------------------------------------------------------------------
 // MEALS TAB
 // --------------------------------------------------------------------------
-function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe, onShowAll }) {
+function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
 
   const filtered = recipes
-    .filter((r) =>
-      filterCat === "All" ? true : (r.category || "Other") === filterCat
-    )
+    .filter((r) => filterCat === "All" || (r.category || "Other") === filterCat)
     .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
-      // Selected first, then alpha
       const aSel = selected.includes(a.id);
       const bSel = selected.includes(b.id);
       if (aSel !== bSel) return aSel ? -1 : 1;
@@ -495,7 +569,6 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe, onShowAll 
         title="this week's meals"
         subtitle="tap to add to your week. selected meals stay pinned at the top."
       />
-
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
@@ -514,7 +587,6 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe, onShowAll 
           new
         </button>
       </div>
-
       <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
         {["All", ...CATEGORIES].map((c) => (
           <button
@@ -530,7 +602,6 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe, onShowAll 
           </button>
         ))}
       </div>
-
       <div className="grid gap-2">
         {filtered.map((r) => {
           const isSelected = selected.includes(r.id);
@@ -538,59 +609,37 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe, onShowAll 
             <div
               key={r.id}
               className={`group bg-white rounded-xl border transition-all card-shadow ${
-                isSelected
-                  ? "border-amber-700/40 bg-amber-50/40"
-                  : "border-stone-200/70"
+                isSelected ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70"
               }`}
             >
               <div className="flex items-stretch">
-                <button
-                  onClick={() => onToggle(r.id)}
-                  className="flex-1 flex items-center gap-3 p-3 text-left"
-                >
+                <button onClick={() => onToggle(r.id)} className="flex-1 flex items-center gap-3 p-3 text-left">
                   <Checkbox checked={isSelected} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="font-display text-lg leading-tight text-stone-900">
-                        {r.name}
-                      </span>
+                      <span className="font-display text-lg leading-tight text-stone-900">{r.name}</span>
                       {r.category && r.category !== "Other" && (
-                        <span className="text-[10px] uppercase tracking-wider text-stone-500 font-semibold">
-                          {r.category}
-                        </span>
+                        <span className="text-[10px] uppercase tracking-wider text-stone-500 font-semibold">{r.category}</span>
                       )}
                     </div>
-                    {r.ingredients.length > 0 && (
+                    {r.ingredients && r.ingredients.length > 0 ? (
                       <div className="text-xs text-stone-500 truncate mt-0.5">
                         {r.ingredients.slice(0, 4).join(" · ")}
                         {r.ingredients.length > 4 && ` +${r.ingredients.length - 4}`}
                       </div>
-                    )}
-                    {r.ingredients.length === 0 && (
-                      <div className="text-xs text-amber-700/70 italic mt-0.5">
-                        no ingredients yet
-                      </div>
+                    ) : (
+                      <div className="text-xs text-amber-700/70 italic mt-0.5">no ingredients yet</div>
                     )}
                   </div>
                 </button>
-                <div className="flex items-center pr-2">
+                <div className="flex items-center pr-2 gap-1">
                   {r.url && (
-                    <a
-                      href={r.url}
-                      target="_blank"
-                      rel="noopener"
-                      onClick={(e) => e.stopPropagation()}
-                      className="p-2 text-stone-400 hover:text-amber-800"
-                      title="open recipe"
-                    >
+                    <a href={r.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}
+                      className="p-2 text-stone-400 hover:text-amber-800" title="open recipe">
                       <ExternalLink className="w-4 h-4" />
                     </a>
                   )}
-                  <button
-                    onClick={() => onEdit(r)}
-                    className="p-2 text-stone-400 hover:text-stone-700"
-                    title="edit"
-                  >
+                  <button onClick={() => onEdit(r)} className="p-2 text-stone-400 hover:text-stone-700" title="edit">
                     <Edit3 className="w-4 h-4" />
                   </button>
                 </div>
@@ -599,9 +648,7 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe, onShowAll 
           );
         })}
         {filtered.length === 0 && (
-          <div className="text-center py-12 text-stone-400 text-sm">
-            no meals match. try a different search.
-          </div>
+          <div className="text-center py-12 text-stone-400 text-sm">no meals match. try a different search.</div>
         )}
       </div>
     </section>
@@ -615,28 +662,18 @@ function PantryTab({ ingredients, counts, pantryItems, onToggle, skipCount, sect
   if (ingredients.length === 0) {
     return (
       <section className="pt-4">
-        <SectionHeader
-          eyebrow="step two"
-          title="check your pantry"
-          subtitle="select meals first and ingredients will show up here."
-        />
-        <EmptyState
-          icon={<Package className="w-8 h-8" />}
-          message="no ingredients yet. pick some meals first."
-        />
+        <SectionHeader eyebrow="step two" title="check your pantry" subtitle="select meals first and ingredients will appear here." />
+        <EmptyState icon={<Package className="w-8 h-8" />} message="no ingredients yet. pick some meals first." />
       </section>
     );
   }
-  // group by section
   const grouped = {};
   ingredients.forEach((ing) => {
     const sec = getSection(ing, sections);
     if (!grouped[sec]) grouped[sec] = [];
     grouped[sec].push(ing);
   });
-  const orderedSections = Object.keys(grouped).sort(
-    (a, b) => sectionOrder(a) - sectionOrder(b)
-  );
+  const orderedSections = Object.keys(grouped).sort((a, b) => sectionOrder(a) - sectionOrder(b));
 
   return (
     <section className="pt-4">
@@ -658,17 +695,11 @@ function PantryTab({ ingredients, counts, pantryItems, onToggle, skipCount, sect
                     key={ing}
                     onClick={() => onToggle(ing)}
                     className={`flex items-center gap-3 px-3 py-2.5 bg-white rounded-lg border text-left transition-all card-shadow ${
-                      have
-                        ? "border-emerald-700/30 bg-emerald-50/40"
-                        : "border-stone-200/70"
+                      have ? "border-emerald-700/30 bg-emerald-50/40" : "border-stone-200/70"
                     }`}
                   >
                     <Checkbox checked={have} green />
-                    <span
-                      className={`flex-1 text-sm ${
-                        have ? "text-stone-400 strike-through" : "text-stone-800"
-                      }`}
-                    >
+                    <span className={`flex-1 text-sm ${have ? "text-stone-400 strike-through" : "text-stone-800"}`}>
                       {ing}
                     </span>
                     {count > 1 && (
@@ -699,10 +730,7 @@ function ExtrasTab({ extras, onToggle, onAdd, onDelete }) {
   });
 
   function handleAdd() {
-    if (input.trim()) {
-      onAdd(input);
-      setInput("");
-    }
+    if (input.trim()) { onAdd(input); setInput(""); }
   }
 
   return (
@@ -710,9 +738,8 @@ function ExtrasTab({ extras, onToggle, onAdd, onDelete }) {
       <SectionHeader
         eyebrow="step three"
         title="extras & staples"
-        subtitle="non-recipe items you might need. household goods, snacks, etc."
+        subtitle="non-recipe items you need. household goods, snacks, etc."
       />
-
       <div className="flex gap-2 mb-4">
         <input
           value={input}
@@ -721,15 +748,10 @@ function ExtrasTab({ extras, onToggle, onAdd, onDelete }) {
           placeholder="add an item…"
           className="flex-1 px-4 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10"
         />
-        <button
-          onClick={handleAdd}
-          className="bg-stone-900 text-amber-50 px-4 py-2.5 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800"
-        >
-          <Plus className="w-4 h-4" />
-          add
+        <button onClick={handleAdd} className="bg-stone-900 text-amber-50 px-4 py-2.5 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800">
+          <Plus className="w-4 h-4" />add
         </button>
       </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
         {sorted.map((item) => (
           <div
@@ -738,39 +760,23 @@ function ExtrasTab({ extras, onToggle, onAdd, onDelete }) {
               item.active ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70"
             }`}
           >
-            <button
-              onClick={() => onToggle(item.id)}
-              className="flex items-center gap-3 flex-1 text-left"
-            >
+            <button onClick={() => onToggle(item.id)} className="flex items-center gap-3 flex-1 text-left">
               <Checkbox checked={item.active} />
-              <span
-                className={`text-sm ${item.active ? "text-stone-800" : "text-stone-600"}`}
-              >
-                {item.name}
-              </span>
+              <span className={`text-sm ${item.active ? "text-stone-800" : "text-stone-600"}`}>{item.name}</span>
             </button>
-            <button
-              onClick={() => onDelete(item.id)}
-              className="text-stone-300 hover:text-red-700 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-              title="delete"
-            >
+            <button onClick={() => onDelete(item.id)} className="text-stone-300 hover:text-red-700 p-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         ))}
       </div>
-      {sorted.length === 0 && (
-        <EmptyState
-          icon={<Package className="w-8 h-8" />}
-          message="no extras yet. add one above."
-        />
-      )}
+      {sorted.length === 0 && <EmptyState icon={<Package className="w-8 h-8" />} message="no extras yet. add one above." />}
     </section>
   );
 }
 
 // --------------------------------------------------------------------------
-// LIST TAB (final shopping list)
+// LIST TAB
 // --------------------------------------------------------------------------
 function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
   const [reassigning, setReassigning] = useState(null);
@@ -778,23 +784,13 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
   if (total === 0) {
     return (
       <section className="pt-4">
-        <SectionHeader
-          eyebrow="the list"
-          title="ready to shop"
-          subtitle="select meals and you'll see a tidy list grouped by store section."
-        />
-        <EmptyState
-          icon={<ShoppingCart className="w-8 h-8" />}
-          message="nothing to buy yet."
-        />
+        <SectionHeader eyebrow="the list" title="ready to shop" subtitle="select meals and you'll see a tidy list grouped by store section." />
+        <EmptyState icon={<ShoppingCart className="w-8 h-8" />} message="nothing to buy yet." />
       </section>
     );
   }
 
-  const checkedCount = groups.reduce(
-    (n, g) => n + g.items.filter((i) => checked.includes(i.name)).length,
-    0
-  );
+  const checkedCount = groups.reduce((n, g) => n + g.items.filter((i) => checked.includes(i.name)).length, 0);
 
   return (
     <section className="pt-4">
@@ -811,45 +807,19 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
               {g.items.map((item) => {
                 const isChecked = checked.includes(item.name);
                 return (
-                  <div
-                    key={item.name}
-                    className={`flex items-center gap-3 px-4 py-3 transition-colors ${
-                      isChecked ? "bg-stone-50" : ""
-                    }`}
-                  >
-                    <button
-                      onClick={() => onToggle(item.name)}
-                      className="flex items-center gap-3 flex-1 text-left"
-                    >
+                  <div key={item.name} className={`flex items-center gap-3 px-4 py-3 transition-colors ${isChecked ? "bg-stone-50" : ""}`}>
+                    <button onClick={() => onToggle(item.name)} className="flex items-center gap-3 flex-1 text-left">
                       <Checkbox checked={isChecked} />
-                      <span
-                        className={`flex-1 ${
-                          isChecked
-                            ? "text-stone-400 strike-through"
-                            : "text-stone-900 font-medium"
-                        }`}
-                      >
+                      <span className={`flex-1 ${isChecked ? "text-stone-400 strike-through" : "text-stone-900 font-medium"}`}>
                         {item.name}
                       </span>
                       {item.count > 1 && (
-                        <span
-                          className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
-                            isChecked
-                              ? "text-stone-400 bg-stone-100"
-                              : "text-amber-800 bg-amber-100/70"
-                          }`}
-                        >
+                        <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${isChecked ? "text-stone-400 bg-stone-100" : "text-amber-800 bg-amber-100/70"}`}>
                           ×{item.count}
                         </span>
                       )}
                     </button>
-                    <button
-                      onClick={() =>
-                        setReassigning(reassigning === item.name ? null : item.name)
-                      }
-                      className="text-stone-300 hover:text-stone-600 text-xs"
-                      title="change section"
-                    >
+                    <button onClick={() => setReassigning(reassigning === item.name ? null : item.name)} className="text-stone-300 hover:text-stone-600 text-xs px-1">
                       ⋯
                     </button>
                   </div>
@@ -861,32 +831,16 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
       </div>
 
       {reassigning && (
-        <div
-          className="fixed inset-0 bg-stone-900/40 z-40 flex items-end sm:items-center justify-center p-4"
-          onClick={() => setReassigning(null)}
-        >
-          <div
-            className="bg-[#FBF6EC] rounded-2xl w-full max-w-sm p-5 card-shadow"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 bg-stone-900/40 z-40 flex items-end sm:items-center justify-center p-4" onClick={() => setReassigning(null)}>
+          <div className="bg-[#FBF6EC] rounded-2xl w-full max-w-sm p-5 card-shadow" onClick={(e) => e.stopPropagation()}>
             <div className="font-display text-xl mb-1">Move "{reassigning}"</div>
-            <div className="text-xs text-stone-500 mb-4">
-              currently in {getSection(reassigning, sections)}
-            </div>
+            <div className="text-xs text-stone-500 mb-4">currently in {getSection(reassigning, sections)}</div>
             <div className="grid gap-1.5">
               {SECTION_ORDER.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => {
-                    onSetSection(reassigning, s);
-                    setReassigning(null);
-                  }}
+                <button key={s} onClick={() => { onSetSection(reassigning, s); setReassigning(null); }}
                   className={`text-left px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    getSection(reassigning, sections) === s
-                      ? "bg-stone-900 text-amber-50"
-                      : "bg-white border border-stone-200 hover:bg-stone-50"
-                  }`}
-                >
+                    getSection(reassigning, sections) === s ? "bg-stone-900 text-amber-50" : "bg-white border border-stone-200 hover:bg-stone-50"
+                  }`}>
                   {s}
                 </button>
               ))}
@@ -899,64 +853,106 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
 }
 
 // --------------------------------------------------------------------------
-// RECIPE EDITOR (modal)
+// RECIPE EDITOR (modal) — includes URL importer
 // --------------------------------------------------------------------------
 function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSection }) {
   const [name, setName] = useState(recipe.name);
   const [url, setUrl] = useState(recipe.url || "");
   const [category, setCategory] = useState(recipe.category || "Other");
-  const [ingredients, setIngredients] = useState(recipe.ingredients);
+  const [ingredients, setIngredients] = useState(recipe.ingredients || []);
   const [newIng, setNewIng] = useState("");
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleImport() {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    setImportError("");
+    try {
+      const result = await importFromUrl(importUrl.trim());
+      if (!result.name && result.ingredients.length === 0) {
+        setImportError("Couldn't find a recipe at that URL. Try adding ingredients manually.");
+      } else {
+        if (result.name && !name) setName(result.name);
+        if (!url) setUrl(importUrl.trim());
+        setIngredients(result.ingredients);
+        setImportUrl("");
+      }
+    } catch (e) {
+      setImportError("Import failed. Check the URL and try again.");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   function addIngredient() {
     if (!newIng.trim()) return;
-    // allow comma-separated batch add
     const parts = newIng.split(",").map((s) => s.trim()).filter(Boolean);
     setIngredients([...ingredients, ...parts]);
     setNewIng("");
   }
+
   function removeIngredient(idx) {
     setIngredients(ingredients.filter((_, i) => i !== idx));
   }
-  function handleSave() {
-    if (!name.trim()) {
-      alert("Give the recipe a name first.");
-      return;
-    }
-    onSave({
-      ...recipe,
-      name: name.trim(),
-      url: url.trim(),
-      category,
-      ingredients,
-    });
+
+  async function handleSave() {
+    if (!name.trim()) { alert("Give the recipe a name first."); return; }
+    setSaving(true);
+    await onSave({ ...recipe, name: name.trim(), url: url.trim(), category, ingredients });
+    setSaving(false);
   }
 
   return (
     <div className="fixed inset-0 bg-stone-900/50 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="bg-[#FBF6EC] w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl flex flex-col max-h-[92vh]">
+        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-stone-200/70">
           <div>
             <div className="text-[10px] uppercase tracking-[0.22em] text-stone-500 font-semibold">
-              {recipe.id.startsWith("new") ? "new recipe" : "edit recipe"}
+              {recipe.id === "new" ? "new recipe" : "edit recipe"}
             </div>
-            <div className="font-display text-2xl text-stone-900 mt-0.5">
-              {name || "untitled"}
-            </div>
+            <div className="font-display text-2xl text-stone-900 mt-0.5">{name || "untitled"}</div>
           </div>
-          <button
-            onClick={onCancel}
-            className="p-2 text-stone-400 hover:text-stone-700"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <button onClick={onCancel} className="p-2 text-stone-400 hover:text-stone-700"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="overflow-y-auto p-5 space-y-5">
+          {/* URL Importer */}
+          <div className="bg-amber-50/60 border border-amber-200/60 rounded-xl p-4">
+            <div className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-2 flex items-center gap-1.5">
+              <Link className="w-3.5 h-3.5" />
+              import from url
+            </div>
+            <div className="text-xs text-stone-500 mb-3">
+              Paste a recipe URL and we'll auto-fill the name and ingredients.
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !importing && handleImport()}
+                placeholder="https://recipe-site.com/my-recipe"
+                className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50"
+                disabled={importing}
+              />
+              <button
+                onClick={handleImport}
+                disabled={importing || !importUrl.trim()}
+                className="bg-amber-800 text-amber-50 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 hover:bg-amber-900 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                {importing ? <Loader2 className="w-4 h-4 spin" /> : <Link className="w-4 h-4" />}
+                {importing ? "importing…" : "import"}
+              </button>
+            </div>
+            {importError && <div className="text-xs text-red-700 mt-2">{importError}</div>}
+          </div>
+
+          {/* Name */}
           <div>
-            <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">
-              name
-            </label>
+            <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">name</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -965,6 +961,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
             />
           </div>
 
+          {/* URL */}
           <div>
             <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">
               recipe url <span className="lowercase italic font-normal">(optional)</span>
@@ -977,19 +974,16 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
             />
           </div>
 
+          {/* Category */}
           <div>
-            <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">
-              category
-            </label>
+            <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">category</label>
             <div className="flex gap-1.5 mt-1.5 flex-wrap">
               {CATEGORIES.map((c) => (
                 <button
                   key={c}
                   onClick={() => setCategory(c)}
                   className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    category === c
-                      ? "bg-amber-800 text-amber-50"
-                      : "bg-white text-stone-600 border border-stone-200"
+                    category === c ? "bg-amber-800 text-amber-50" : "bg-white text-stone-600 border border-stone-200"
                   }`}
                 >
                   {c}
@@ -998,9 +992,10 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
             </div>
           </div>
 
+          {/* Ingredients */}
           <div>
             <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">
-              ingredients
+              ingredients <span className="lowercase italic font-normal">({ingredients.length})</span>
             </label>
             <div className="flex gap-2 mt-1.5">
               <input
@@ -1010,70 +1005,48 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
                 placeholder="add ingredient (or paste comma-separated)"
                 className="flex-1 px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10"
               />
-              <button
-                onClick={addIngredient}
-                className="bg-stone-900 text-amber-50 px-3 rounded-lg hover:bg-stone-800"
-              >
+              <button onClick={addIngredient} className="bg-stone-900 text-amber-50 px-3 rounded-lg hover:bg-stone-800">
                 <Plus className="w-4 h-4" />
               </button>
             </div>
-            <div className="mt-3 space-y-1">
+            <div className="mt-3 space-y-1 max-h-48 overflow-y-auto">
               {ingredients.map((ing, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-2 px-3 py-2 bg-white border border-stone-200 rounded-lg group"
-                >
+                <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-white border border-stone-200 rounded-lg">
                   <span className="text-sm text-stone-800 flex-1">{ing}</span>
                   <select
                     value={getSection(ing, sections)}
                     onChange={(e) => onSetSection(ing, e.target.value)}
                     className="text-[10px] uppercase tracking-wider bg-stone-100 px-2 py-1 rounded-md text-stone-600 border-0 focus:outline-none"
                   >
-                    {SECTION_ORDER.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
+                    {SECTION_ORDER.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
-                  <button
-                    onClick={() => removeIngredient(idx)}
-                    className="text-stone-300 hover:text-red-700"
-                  >
+                  <button onClick={() => removeIngredient(idx)} className="text-stone-300 hover:text-red-700">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ))}
               {ingredients.length === 0 && (
-                <div className="text-xs text-stone-400 italic px-1 py-2">
-                  no ingredients added yet
-                </div>
+                <div className="text-xs text-stone-400 italic px-1 py-2">no ingredients added yet</div>
               )}
             </div>
           </div>
         </div>
 
+        {/* Footer */}
         <div className="flex items-center justify-between gap-2 p-5 border-t border-stone-200/70 bg-[#F6EFE2]/50">
           {onDelete ? (
-            <button
-              onClick={onDelete}
-              className="text-red-700/80 hover:text-red-800 text-sm font-medium flex items-center gap-1.5"
-            >
-              <Trash2 className="w-4 h-4" />
-              delete
+            <button onClick={onDelete} className="text-red-700/80 hover:text-red-800 text-sm font-medium flex items-center gap-1.5">
+              <Trash2 className="w-4 h-4" />delete
             </button>
-          ) : (
-            <span></span>
-          )}
+          ) : <span />}
           <div className="flex gap-2">
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 text-stone-600 hover:text-stone-900 text-sm font-medium"
-            >
-              cancel
-            </button>
+            <button onClick={onCancel} className="px-4 py-2 text-stone-600 hover:text-stone-900 text-sm font-medium">cancel</button>
             <button
               onClick={handleSave}
-              className="bg-stone-900 text-amber-50 px-5 py-2 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800"
+              disabled={saving}
+              className="bg-stone-900 text-amber-50 px-5 py-2 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800 disabled:opacity-60"
             >
-              <Save className="w-4 h-4" />
+              {saving ? <Loader2 className="w-4 h-4 spin" /> : <Save className="w-4 h-4" />}
               save
             </button>
           </div>
@@ -1088,16 +1061,12 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
 // --------------------------------------------------------------------------
 function Checkbox({ checked, green }) {
   return (
-    <span
-      className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-        checked
-          ? green
-            ? "bg-emerald-700 border-emerald-700"
-            : "bg-amber-800 border-amber-800"
-          : "bg-white border-stone-300"
-      }`}
-    >
-      {checked && <Check className="w-3 h-3 text-amber-50 checkbox-tick" strokeWidth={3.5} />}
+    <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+      checked
+        ? green ? "bg-emerald-700 border-emerald-700" : "bg-amber-800 border-amber-800"
+        : "bg-white border-stone-300"
+    }`}>
+      {checked && <Check className="w-3 h-3 text-amber-50" strokeWidth={3.5} />}
     </span>
   );
 }
@@ -1105,15 +1074,9 @@ function Checkbox({ checked, green }) {
 function SectionHeader({ eyebrow, title, subtitle }) {
   return (
     <div className="mb-4">
-      <div className="text-[10px] uppercase tracking-[0.22em] text-stone-500 font-semibold">
-        {eyebrow}
-      </div>
-      <h2 className="font-display text-2xl sm:text-3xl text-stone-900 leading-tight mt-0.5">
-        {title}
-      </h2>
-      {subtitle && (
-        <p className="text-sm text-stone-500 mt-1">{subtitle}</p>
-      )}
+      <div className="text-[10px] uppercase tracking-[0.22em] text-stone-500 font-semibold">{eyebrow}</div>
+      <h2 className="font-display text-2xl sm:text-3xl text-stone-900 leading-tight mt-0.5">{title}</h2>
+      {subtitle && <p className="text-sm text-stone-500 mt-1">{subtitle}</p>}
     </div>
   );
 }
@@ -1121,15 +1084,9 @@ function SectionHeader({ eyebrow, title, subtitle }) {
 function SectionLabel({ name, count }) {
   return (
     <div className="flex items-baseline gap-2 mb-2 px-1">
-      <span className="font-display text-sm uppercase tracking-[0.18em] text-amber-800/90 font-semibold">
-        {name}
-      </span>
-      <span className="flex-1 h-px bg-amber-800/15"></span>
-      {count != null && (
-        <span className="text-[10px] text-stone-500 font-semibold">
-          {count}
-        </span>
-      )}
+      <span className="font-display text-sm uppercase tracking-[0.18em] text-amber-800/90 font-semibold">{name}</span>
+      <span className="flex-1 h-px bg-amber-800/15" />
+      {count != null && <span className="text-[10px] text-stone-500 font-semibold">{count}</span>}
     </div>
   );
 }
@@ -1160,33 +1117,18 @@ function BottomNav({ tab, setTab, counts }) {
           const Icon = it.icon;
           const active = tab === it.key;
           return (
-            <button
-              key={it.key}
-              onClick={() => setTab(it.key)}
-              className="flex-1 flex flex-col items-center py-2 gap-0.5 relative"
-            >
-              <div
-                className={`p-2 rounded-full transition-colors relative ${
-                  active ? "bg-stone-900 text-amber-50" : "text-stone-500"
-                }`}
-              >
+            <button key={it.key} onClick={() => setTab(it.key)} className="flex-1 flex flex-col items-center py-2 gap-0.5 relative">
+              <div className={`p-2 rounded-full transition-colors relative ${active ? "bg-stone-900 text-amber-50" : "text-stone-500"}`}>
                 <Icon className="w-4 h-4" />
-                {it.badge > 0 && !active && (
-                  <span className="absolute -top-0.5 -right-0.5 bg-amber-700 text-amber-50 text-[9px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
-                    {it.badge}
-                  </span>
-                )}
-                {it.badge > 0 && active && (
-                  <span className="absolute -top-0.5 -right-0.5 bg-amber-50 text-stone-900 text-[9px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center border border-stone-900">
+                {it.badge > 0 && (
+                  <span className={`absolute -top-0.5 -right-0.5 text-[9px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center ${
+                    active ? "bg-amber-50 text-stone-900 border border-stone-900" : "bg-amber-700 text-amber-50"
+                  }`}>
                     {it.badge}
                   </span>
                 )}
               </div>
-              <span
-                className={`text-[10px] uppercase tracking-wider ${
-                  active ? "text-stone-900 font-semibold" : "text-stone-500"
-                }`}
-              >
+              <span className={`text-[10px] uppercase tracking-wider ${active ? "text-stone-900 font-semibold" : "text-stone-500"}`}>
                 {it.label}
               </span>
             </button>
