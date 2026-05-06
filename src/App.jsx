@@ -72,14 +72,13 @@ const STORAGE_KEY = "shopping-app-data-v1";
 // --------------------------------------------------------------------------
 // PERSISTENCE
 // --------------------------------------------------------------------------
+// Replace loadData() with:
 async function loadData() {
   try {
-    const result = await window.storage.get(STORAGE_KEY);
-    if (result && result.value) return JSON.parse(result.value);
-  } catch (e) {
-    // key doesn't exist yet
-  }
-  // initialize with seed
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  // initialize with seed data
   const recipes = SEED_RECIPES.map((r, i) => ({
     id: "r_" + i + "_" + Date.now(),
     ...r,
@@ -94,9 +93,10 @@ async function loadData() {
   };
 }
 
+// Replace saveData() with:
 async function saveData(data) {
   try {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {
     console.error("save failed", e);
   }
