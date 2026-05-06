@@ -200,7 +200,7 @@ export default function App() {
       if (!map[sec]) map[sec] = [];
       const ex = map[sec].find((x) => x.name === e.name);
       if (ex) ex.count += 1;
-      else map[sec].push({ name: e.name, count: 1, quantities: [] });
+      else map[sec].push({ name: e.name, count: 1, quantities: e.quantity ? [e.quantity] : [] });
     });
     return Object.keys(map)
       .sort((a, b) => sectionOrder(a) - sectionOrder(b))
@@ -225,15 +225,20 @@ export default function App() {
     setExtras((p) => p.map((x) => x.id === id ? { ...x, active: !x.active } : x));
   }
 
-  async function addExtra(name) {
+  async function addExtra(name, quantity = "") {
     if (!name.trim()) return;
-    const { data } = await supabase.from("extras").insert({ name: name.trim(), active: true, sort_order: extras.length }).select().single();
+    const { data } = await supabase.from("extras").insert({ name: name.trim(), quantity: quantity.trim(), active: true, sort_order: extras.length }).select().single();
     if (data) setExtras((p) => [...p, data]);
   }
 
   async function deleteExtra(id) {
     await supabase.from("extras").delete().eq("id", id);
     setExtras((p) => p.filter((x) => x.id !== id));
+  }
+
+  async function updateExtraQty(id, quantity) {
+    await supabase.from("extras").update({ quantity }).eq("id", id);
+    setExtras((p) => p.map((x) => x.id === id ? { ...x, quantity } : x));
   }
 
   function toggleChecked(name) {
@@ -326,7 +331,7 @@ export default function App() {
             />
           )}
           {tab === "extras" && (
-            <ExtrasTab extras={extras} onToggle={toggleExtra} onAdd={addExtra} onDelete={deleteExtra} />
+            <ExtrasTab extras={extras} onToggle={toggleExtra} onAdd={addExtra} onDelete={deleteExtra} onUpdateQty={updateExtraQty} />
           )}
           {tab === "list" && (
             <ListTab
@@ -519,25 +524,35 @@ function PantryTab({ ingredients, agg, pantryItems, onToggle, skipCount, section
 
 // ─── Extras Tab ───────────────────────────────────────────────────────────────
 
-function ExtrasTab({ extras, onToggle, onAdd, onDelete }) {
+function ExtrasTab({ extras, onToggle, onAdd, onDelete, onUpdateQty }) {
   const [input, setInput] = useState("");
+  const [inputQty, setInputQty] = useState("");
   const sorted = [...extras].sort((a, b) => { if (a.active !== b.active) return a.active ? -1 : 1; return a.name.localeCompare(b.name); });
-  function handleAdd() { if (input.trim()) { onAdd(input); setInput(""); } }
+  function handleAdd() { if (input.trim()) { onAdd(input, inputQty); setInput(""); setInputQty(""); } }
   return (
     <section className="pt-4">
       <SectionHeader eyebrow="step three" title="extras & staples" subtitle="non-recipe items you need." />
       <div className="flex gap-2 mb-4">
+        <input value={inputQty} onChange={(e) => setInputQty(e.target.value)} placeholder="qty" className="w-20 px-3 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 shrink-0" />
         <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAdd()} placeholder="add an item…" className="flex-1 px-4 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10" />
         <button onClick={handleAdd} className="bg-stone-900 text-amber-50 px-4 py-2.5 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800"><Plus className="w-4 h-4" />add</button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
         {sorted.map((item) => (
-          <div key={item.id} className={`group flex items-center gap-3 px-3 py-2.5 bg-white rounded-lg border card-shadow ${item.active ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70"}`}>
-            <button onClick={() => onToggle(item.id)} className="flex items-center gap-3 flex-1 text-left">
+          <div key={item.id} className={`group flex items-center gap-2 px-3 py-2.5 bg-white rounded-lg border card-shadow ${item.active ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70"}`}>
+            <button onClick={() => onToggle(item.id)} className="flex items-center gap-2 flex-1 text-left min-w-0">
               <Checkbox checked={item.active} />
-              <span className={`text-sm ${item.active ? "text-stone-800" : "text-stone-600"}`}>{item.name}</span>
+              <div className="flex-1 min-w-0">
+                <div className={`text-sm truncate ${item.active ? "text-stone-800" : "text-stone-600"}`}>{item.name}</div>
+              </div>
             </button>
-            <button onClick={() => onDelete(item.id)} className="text-stone-300 hover:text-red-700 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-3.5 h-3.5" /></button>
+            <input
+              value={item.quantity || ""}
+              onChange={(e) => onUpdateQty(item.id, e.target.value)}
+              placeholder="qty"
+              className="w-16 text-xs bg-stone-50 border border-stone-200 rounded px-2 py-1 focus:outline-none focus:border-amber-700/50 text-stone-600 shrink-0"
+            />
+            <button onClick={() => onDelete(item.id)} className="text-stone-300 hover:text-red-700 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         ))}
       </div>
