@@ -640,8 +640,9 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
   const [saving, setSaving] = useState(false);
+  const fileRef = useRef(null);
 
-  async function handleImport() {
+  async function handleUrlImport() {
     if (!importUrl.trim()) return;
     setImporting(true);
     setImportError("");
@@ -654,25 +655,48 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
       if (!res.ok) throw new Error("Server error");
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      if (!data.name && (!data.ingredients || data.ingredients.length === 0)) {
-        setImportError("Couldn't find a recipe at that URL. Try adding ingredients manually.");
-        return;
-      }
-      if (data.name && !name) setName(data.name);
-      if (!url) setUrl(importUrl.trim());
-      const imported = (data.ingredients || []).map((i) =>
-        typeof i === "string" ? { name: i, quantity: "" } : { name: i.name || "", quantity: i.quantity || "" }
-      );
-      setIngredients(imported);
-      const updates = {};
-      (data.ingredients || []).forEach((i) => { if (i.name && i.section) updates[i.name] = i.section; });
-      Object.entries(updates).forEach(([ing, sec]) => onSetSection(ing, sec));
+      applyImportResult(data, importUrl.trim());
       setImportUrl("");
     } catch (e) {
-      setImportError(`Import failed: ${e.message}`);
+      setImportError(`URL import failed: ${e.message}`);
     } finally {
       setImporting(false);
     }
+  }
+
+  async function handlePdfImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== "application/pdf") { setImportError("Please select a PDF file."); return; }
+    setImporting(true);
+    setImportError("");
+    try {
+      const formData = new FormData();
+      formData.append("pdf", file);
+      formData.append("url", importUrl.trim());
+      const res = await fetch("/api/import-recipe", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Server error");
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      applyImportResult(data, data.url || importUrl.trim());
+    } catch (e) {
+      setImportError(`PDF import failed: ${e.message}`);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  function applyImportResult(data, sourceUrl) {
+    if (data.name && !name) setName(data.name);
+    if (sourceUrl && !url) setUrl(sourceUrl);
+    const imported = (data.ingredients || []).map((i) =>
+      typeof i === "string" ? { name: i, quantity: "" } : { name: i.name || "", quantity: i.quantity || "" }
+    );
+    if (imported.length > 0) setIngredients(imported);
+    const updates = {};
+    (data.ingredients || []).forEach((i) => { if (i.name && i.section) updates[i.name] = i.section; });
+    Object.entries(updates).forEach(([ing, sec]) => onSetSection(ing, sec));
   }
 
   function addIngredient() {
@@ -714,15 +738,28 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
 
         <div className="overflow-y-auto p-5 space-y-5">
           <div className="bg-amber-50/60 border border-amber-200/60 rounded-xl p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-1 flex items-center gap-1.5"><Link className="w-3.5 h-3.5" />import from url</div>
-            <div className="text-xs text-stone-500 mb-3">Paste a recipe URL to auto-fill name, ingredients & quantities.</div>
-            <div className="flex gap-2">
-              <input value={importUrl} onChange={(e) => setImportUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !importing && handleImport()} placeholder="https://recipe-site.com/recipe" className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50" disabled={importing} />
-              <button onClick={handleImport} disabled={importing || !importUrl.trim()} className="bg-amber-800 text-amber-50 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 hover:bg-amber-900 disabled:opacity-50 whitespace-nowrap">
+            <div className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-1 flex items-center gap-1.5"><Link className="w-3.5 h-3.5" />import recipe</div>
+            <div className="text-xs text-stone-500 mb-3">Paste a URL to try auto-import, or print the recipe to PDF and upload it for guaranteed results.</div>
+
+            {/* URL row */}
+            <div className="flex gap-2 mb-2">
+              <input value={importUrl} onChange={(e) => setImportUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !importing && handleUrlImport()} placeholder="https://recipe-site.com/recipe" className="flex-1 px-3 py-2 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50" disabled={importing} />
+              <button onClick={handleUrlImport} disabled={importing || !importUrl.trim()} className="bg-amber-800 text-amber-50 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 hover:bg-amber-900 disabled:opacity-50 whitespace-nowrap">
                 {importing ? <Loader2 className="w-4 h-4 spin" /> : <Link className="w-4 h-4" />}
-                {importing ? "importing…" : "import"}
+                {importing ? "importing…" : "try url"}
               </button>
             </div>
+
+            {/* PDF row */}
+            <div className="flex gap-2 items-center">
+              <div className="flex-1 text-xs text-stone-500 italic">or upload a PDF (File → Print → Save as PDF in your browser)</div>
+              <input ref={fileRef} type="file" accept="application/pdf" onChange={handlePdfImport} className="hidden" />
+              <button onClick={() => fileRef.current?.click()} disabled={importing} className="bg-stone-700 text-amber-50 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800 disabled:opacity-50 whitespace-nowrap shrink-0">
+                {importing ? <Loader2 className="w-4 h-4 spin" /> : <Plus className="w-4 h-4" />}
+                upload pdf
+              </button>
+            </div>
+
             {importError && <div className="text-xs text-red-700 mt-2">{importError}</div>}
           </div>
 
