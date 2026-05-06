@@ -15,38 +15,52 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Could not fetch that URL" });
   }
 
-  // Strip to plain text
-  const text = html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .slice(0, 8000);
-
-  // Call Claude
-  const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1000,
-      system: `You are a recipe parser. Extract recipe information and return ONLY valid JSON with no markdown, no backticks, no explanation:
-{"name": "Recipe Name", "ingredients": ["Ingredient 1", "Ingredient 2"]}
-Ingredients should be simple names only, no quantities or prep notes. Example: "Chicken" not "2 lbs boneless chicken breast". If no recipe found, return {"name": "", "ingredients": []}.`,
-      messages: [{ role: "user", content: `Extract the recipe:\n\n${text}` }],
-    }),
-  });
-
-  const data = await apiRes.json();
-  const raw = data.content?.[0]?.text || "{}";
-  try {
-    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-    return res.status(200).json(parsed);
-  } catch {
-    return res.status(500).json({ error: "Parse failed" });
+  // Try JSON-LD first (used by most major recipe sites)
+  const jsonLdMatches = html.matchAll(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi);
+  for (const match of jsonLdMatches) {
+    try {
+      const json = JSON.parse(match[1]);
+      const recipes = [json, ...(json["@graph"] || [])];
+      for (const node of recipes) {
+        if (node["@type"] === "Recipe" || (Array.isArray(node["@type"]) && node["@type"].includes("Recipe"))) {
+          const name = node.name || "";
+          const rawIngredients = node.recipeIngredient || [];
+          const ingredients = rawIngredients.map(stripQuantities);
+          return res.status(200).json({ name, ingredients });
+        }
+      }
+    } catch (e) {
+      continue;
+    }
   }
+
+  // Fallback: look for ingredient-looking list items in the HTML
+  const ingMatches = html.matchAll(/<li[^>]*class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi);
+  const ingredients = [];
+  for (const match of ingMatches) {
+    const text = match[1].replace(/<[^>]+>/g, "").trim();
+    if (text) ingredients.push(stripQuantities(text));
+  }
+
+  if (ingredients.length > 0) {
+    // Try to grab the title as recipe name
+    const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    const name = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+    return res.status(200).json({ name, ingredients });
+  }
+
+  return res.status(200).json({ name: "", ingredients: [] });
+}
+
+// Strip quantities and prep notes, return just the ingredient name
+function stripQuantities(str) {
+  return str
+    .replace(/<[^>]+>/g, "")           // strip HTML tags
+    .replace(/^\s*[\d¼½¾⅓⅔⅛⅜⅝⅞]+[\s\/\-–]*/u, "") // leading numbers/fractions
+    .replace(/^\s*(one|two|three|four|five|six|seven|eight|nine|ten)\s+/i, "")
+    .replace(/\([^)]*\)/g, "")          // parentheticals like (optional)
+    .replace(/,.*$/, "")                // everything after first comma
+    .replace(/\b(cup|cups|tbsp|tsp|tablespoon|tablespoons|teaspoon|teaspoons|oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|liter|liters|clove|cloves|can|cans|bunch|package|pkg|slice|slices|large|medium|small|fresh|dried|chopped|minced|diced|sliced|whole|ground)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
