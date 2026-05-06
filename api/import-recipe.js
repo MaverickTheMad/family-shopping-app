@@ -236,22 +236,63 @@ export default async function handler(req, res) {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "No URL provided" });
 
-  let html = "";
+  // Strategy 1: fetch directly and look for JSON-LD (fastest, works on many sites)
+  let html = await fetchDirect(url);
+
+  // If direct fetch got us JSON-LD, use it right away
+  const directResult = tryJsonLd(html);
+  if (directResult) return res.status(200).json(directResult);
+
+  // Strategy 2: Jina AI reader — renders pages properly, bypasses most bot protection
+  // Free, no API key, works on Cloudflare-protected sites
+  const jinaUrl = `https://r.jina.ai/${url}`;
+  let jinaText = "";
   try {
-    const pageRes = await fetch(url, {
+    const jinaRes = await fetch(jinaUrl, {
+      headers: {
+        "Accept": "text/plain",
+        "X-Return-Format": "text",
+      },
+    });
+    jinaText = await jinaRes.text();
+  } catch (e) {
+    // Jina failed, continue to fallback
+  }
+
+  // Try to find ingredients in Jina's plain-text output
+  if (jinaText && jinaText.length > 100) {
+    const jinaIngredients = parseIngredientsFromText(jinaText);
+    if (jinaIngredients.length > 0) {
+      const nameMatch = jinaText.match(/^#\s+(.+)/m) || jinaText.match(/Title:\s*(.+)/m);
+      const name = nameMatch ? nameMatch[1].trim() : "";
+      return res.status(200).json({ name, ingredients: jinaIngredients });
+    }
+  }
+
+  // Strategy 3: try HTML scraping from direct fetch as last resort
+  const liResult = tryLiScrape(html);
+  if (liResult) return res.status(200).json(liResult);
+
+  return res.status(200).json({ name: "", ingredients: [] });
+}
+
+async function fetchDirect(url) {
+  try {
+    const res = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
       },
     });
-    if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status}`);
-    html = await pageRes.text();
+    return await res.text();
   } catch (e) {
-    return res.status(400).json({ error: `Could not fetch that URL: ${e.message}` });
+    return "";
   }
+}
 
-  // --- Try JSON-LD ---
+function tryJsonLd(html) {
+  if (!html) return null;
   const jsonLdRe = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
   while ((match = jsonLdRe.exec(html)) !== null) {
@@ -262,24 +303,22 @@ export default async function handler(req, res) {
         const t = Array.isArray(node["@type"]) ? node["@type"] : [node["@type"]];
         if (t.includes("Recipe")) {
           const name = node.name || "";
-          const rawIngredients = node.recipeIngredient || [];
-          const ingredients = rawIngredients.map((line) => {
+          const ingredients = (node.recipeIngredient || []).map((line) => {
             const { name: ingName, quantity } = parseIngredientLine(line);
-            return {
-              name: ingName,
-              quantity,
-              section: detectSection(ingName),
-            };
+            return { name: ingName, quantity, section: detectSection(ingName) };
           });
-          return res.status(200).json({ name, ingredients });
+          if (ingredients.length > 0) return { name, ingredients };
         }
       }
     } catch (e) {
       continue;
     }
   }
+  return null;
+}
 
-  // --- Fallback: scrape ingredient list items ---
+function tryLiScrape(html) {
+  if (!html) return null;
   const liRe = /<li[^>]*class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
   const ingredients = [];
   let liMatch;
@@ -287,15 +326,62 @@ export default async function handler(req, res) {
     const text = liMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     if (text) {
       const { name: ingName, quantity } = parseIngredientLine(text);
-      ingredients.push({ name: ingName, quantity, section: detectSection(ingName) });
+      if (ingName) ingredients.push({ name: ingName, quantity, section: detectSection(ingName) });
+    }
+  }
+  if (ingredients.length === 0) return null;
+  const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const name = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+  return { name, ingredients };
+}
+
+// Parse ingredients from Jina's plain text output
+// Jina returns markdown-like text; ingredients often appear as list items
+function parseIngredientsFromText(text) {
+  const ingredients = [];
+  const lines = text.split("\n");
+  let inIngredientSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Detect ingredient section headers
+    if (/^#+\s*(ingredient|what you.ll need|you.ll need)/i.test(trimmed)) {
+      inIngredientSection = true;
+      continue;
+    }
+    // Stop at instructions section
+    if (inIngredientSection && /^#+\s*(instruction|direction|method|how to|step)/i.test(trimmed)) {
+      break;
+    }
+
+    if (inIngredientSection) {
+      // List items (markdown bullets or numbers)
+      const listMatch = trimmed.match(/^[-*•·▪◦]\s+(.+)/) || trimmed.match(/^\d+\.\s+(.+)/);
+      if (listMatch) {
+        const { name: ingName, quantity } = parseIngredientLine(listMatch[1]);
+        if (ingName && ingName.length > 1) {
+          ingredients.push({ name: ingName, quantity, section: detectSection(ingName) });
+        }
+      }
     }
   }
 
-  if (ingredients.length > 0) {
-    const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-    const name = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
-    return res.status(200).json({ name, ingredients });
+  // If section detection failed, try a looser pass: look for lines that look like ingredients
+  if (ingredients.length === 0) {
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const listMatch = trimmed.match(/^[-*•·▪◦]\s+(.+)/);
+      if (listMatch) {
+        const { name: ingName, quantity } = parseIngredientLine(listMatch[1]);
+        // Only include if it looks like an ingredient (has a unit or short name)
+        if (ingName && ingName.length > 1 && ingName.length < 60) {
+          ingredients.push({ name: ingName, quantity, section: detectSection(ingName) });
+        }
+      }
+    }
   }
 
-  return res.status(200).json({ name: "", ingredients: [] });
+  return ingredients;
 }
