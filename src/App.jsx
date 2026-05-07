@@ -251,7 +251,7 @@ export default function App() {
   }
 
   async function saveRecipe(recipe) {
-    const payload = { name: recipe.name, url: recipe.url || null, category: recipe.category, ingredients: recipe.ingredients };
+    const payload = { name: recipe.name, url: recipe.url || null, category: recipe.category, notes: recipe.notes || "", ingredients: recipe.ingredients };
     const newSections = { ...sections };
     const toUpsert = [];
     recipe.ingredients.forEach((raw) => {
@@ -456,6 +456,9 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe }) {
                     ) : (
                       <div className="text-xs text-amber-700/70 italic mt-0.5">no ingredients yet</div>
                     )}
+                    {r.notes && (
+                      <div className="text-xs text-stone-400 italic truncate mt-0.5">{r.notes}</div>
+                    )}
                   </div>
                 </button>
                 <div className="flex items-center pr-2 gap-1">
@@ -631,6 +634,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   const [name, setName] = useState(recipe.name);
   const [url, setUrl] = useState(recipe.url || "");
   const [category, setCategory] = useState(recipe.category || "Other");
+  const [notes, setNotes] = useState(recipe.notes || "");
   const [ingredients, setIngredients] = useState(
     (recipe.ingredients || []).map(normIng)
   );
@@ -836,7 +840,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   async function handleSave() {
     if (!name.trim()) { alert("Give the recipe a name first."); return; }
     setSaving(true);
-    await onSave({ ...recipe, name: name.trim(), url: url.trim(), category, ingredients });
+    await onSave({ ...recipe, name: name.trim(), url: url.trim(), category, notes, ingredients });
     setSaving(false);
   }
 
@@ -886,6 +890,17 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
           <div>
             <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">recipe url <span className="lowercase italic font-normal">(optional)</span></label>
             <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="mt-1 w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10" />
+          </div>
+
+          <div>
+            <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">notes <span className="lowercase italic font-normal">(optional)</span></label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Serving size, cook time reminders, variations… e.g. 'double the sauce for 6 people'"
+              rows={3}
+              className="mt-1 w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10 resize-none"
+            />
           </div>
 
           <div>
