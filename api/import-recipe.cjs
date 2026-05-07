@@ -1,5 +1,4 @@
 "use strict";
-const pdfParse = require("pdf-parse");
 
 // ─── Category detection ───────────────────────────────────────────────────────
 
@@ -10,7 +9,7 @@ const CATEGORY_RULES = [
   { section: "Bakery & Bread", keywords: ["bread","roll","bun","tortilla","flatbread","pita","naan","bagel","croissant","hawaiian","sourdough","baguette","english muffin","hoagie","ciabatta","focaccia"] },
   { section: "Canned & Jarred", keywords: ["broth","stock","tomato paste","tomato sauce","fire roasted","diced tomato","coconut milk","bouillon","chickpea","garbanzo","black bean","kidney bean","pinto bean","cannellini","olive","pickle","capers","roasted pepper","tapenade","water chestnut"] },
   { section: "Dry Goods & Pasta", keywords: ["pasta","rice","noodle","orzo","flour","oat","cereal","cracker","chip","breadcrumb","quinoa","barley","couscous","polenta","cornstarch","corn starch","chicken rice","lasagna","spaghetti","penne","rigatoni","fusilli","linguine","tortellini","ramen","stuffing"] },
-  { section: "Spices & Seasonings", keywords: ["salt","paprika","cumin","oregano","cinnamon","cayenne","garlic powder","onion powder","chili powder","seasoning","bay leaf","bay leaves","italian seasoning","turmeric","nutmeg","allspice","red pepper flake","black pepper","white pepper","smoked paprika","sweet paprika","cardamom","coriander","fennel seed","garam masala","old bay","taco seasoning","cajun"] },
+  { section: "Spices & Seasonings", keywords: ["salt","paprika","cumin","oregano","cinnamon","cayenne","garlic powder","onion powder","chili powder","seasoning","bay leaf","bay leaves","italian seasoning","turmeric","nutmeg","allspice","red pepper flake","black pepper","white pepper","smoked paprika","sweet paprika","cardamom","coriander","fennel seed","garam masala","old bay","taco seasoning","cajun","poppy seed","dried minced","dried onion"] },
   { section: "Condiments & Sauces", keywords: ["soy sauce","honey","mustard","ketchup","mayo","vinegar","worcestershire","sriracha","hot sauce","marinara","pasta sauce","pesto","ranch","dijon","balsamic","vinaigrette","teriyaki","hoisin","molasses","maple syrup","jam","jelly","fish sauce","oyster sauce","tahini","tamari","bbq"] },
   { section: "Oils & Baking", keywords: ["avocado oil","olive oil","vegetable oil","canola oil","sesame oil","coconut oil","baking powder","baking soda","brown sugar","chocolate chip","cocoa","vanilla extract","yeast","shortening","cream of tartar","powdered sugar","cooking spray"] },
   { section: "Beverages & Wine", keywords: ["wine","beer","cabernet","sauvignon blanc","chardonnay","merlot","pinot","prosecco","white wine","red wine","cider","vodka","rum","whiskey","bourbon","tequila","gin","sake","juice","coffee","tea","lemonade","club soda","seltzer","kombucha"] },
@@ -30,21 +29,22 @@ function detectSection(name) {
 
 // ─── Quantity parser ──────────────────────────────────────────────────────────
 
-const UNICODE_FRACTIONS = { "¼":"1/4","½":"1/2","¾":"3/4","⅓":"1/3","⅔":"2/3","⅛":"1/8","⅜":"3/8","⅝":"5/8","⅞":"7/8" };
+const UNICODE_FRACTIONS = { "\u00bc":"1/4","\u00bd":"1/2","\u00be":"3/4","\u2153":"1/3","\u2154":"2/3","\u215b":"1/8","\u215c":"3/8","\u215d":"5/8","\u215e":"7/8" };
 const WORD_NUMBERS = { one:"1",two:"2",three:"3",four:"4",five:"5",six:"6",seven:"7",eight:"8",nine:"9",ten:"10" };
-const UNITS = ["tablespoons?","tbsps?","tbs?","teaspoons?","tsps?","cups?","fluid ounces?","fl\\.? oz\\.?","ounces?","oz\\.?","pounds?","lbs?\\.?","grams?","g\\.?","kilograms?","kg\\.?","milliliters?","ml\\.?","liters?","l\\.?","quarts?","qt\\.?","pints?","pt\\.?","gallons?","cloves?","cans?","jars?","bags?","boxes?","packages?","pkgs?\\.?","slices?","pieces?","strips?","stalks?","heads?","bunches?","sprigs?","leaves?","pinch(?:es)?","dash(?:es)?","handful(?:s)?","sticks?"];
-const UNIT_RE = new RegExp(`^(${UNITS.join("|")})\\b`, "i");
+const UNIT_PATTERN = "tablespoons?|tbsps?|tbs?|teaspoons?|tsps?|cups?|fluid ounces?|fl\\.? oz\\.?|ounces?|oz\\.?|pounds?|lbs?\\.?|grams?|g\\.?|kilograms?|kg\\.?|milliliters?|ml\\.?|liters?|l\\.?|quarts?|qt\\.?|pints?|pt\\.?|gallons?|cloves?|cans?|jars?|bags?|boxes?|packages?|pkgs?\\.?|slices?|pieces?|strips?|stalks?|heads?|bunches?|sprigs?|leaves?|pinch(?:es)?|dash(?:es)?|handful(?:s)?|sticks?";
+const UNIT_RE = new RegExp("^(" + UNIT_PATTERN + ")\\b", "i");
 
 function parseIngredientLine(raw) {
   let str = raw.trim();
-  for (const [uc, rep] of Object.entries(UNICODE_FRACTIONS)) {
-    str = str.replace(new RegExp(uc, "g"), ` ${rep}`);
+  for (const uc of Object.keys(UNICODE_FRACTIONS)) {
+    str = str.split(uc).join(" " + UNICODE_FRACTIONS[uc]);
   }
   str = str.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  str = str.replace(/^(one|two|three|four|five|six|seven|eight|nine|ten)\b/i, (m) => WORD_NUMBERS[m.toLowerCase()] || m);
+  str = str.replace(/^(one|two|three|four|five|six|seven|eight|nine|ten)\b/i, function(m) {
+    return WORD_NUMBERS[m.toLowerCase()] || m;
+  });
 
-  const qtyRe = /^(\d+(?:[\/\-]\d+)?(?:\.\d+)?(?:\s+\d+\/\d+)?)\s*/;
-  const qtyMatch = str.match(qtyRe);
+  const qtyMatch = str.match(/^(\d+(?:[\/\-]\d+)?(?:\.\d+)?(?:\s+\d+\/\d+)?)\s*/);
   let quantity = "";
   let rest = str;
 
@@ -53,7 +53,7 @@ function parseIngredientLine(raw) {
     rest = str.slice(qtyMatch[0].length);
     const unitMatch = rest.match(UNIT_RE);
     if (unitMatch) {
-      quantity = `${quantity} ${unitMatch[0].trim()}`;
+      quantity = quantity + " " + unitMatch[0].trim();
       rest = rest.slice(unitMatch[0].length).trim();
     }
   }
@@ -65,45 +65,47 @@ function parseIngredientLine(raw) {
     .replace(/\s+/g, " ")
     .trim();
 
-  name = name.charAt(0).toUpperCase() + name.slice(1);
-  return { name, quantity };
+  if (name.length > 0) {
+    name = name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  return { name: name, quantity: quantity };
 }
 
-// ─── Extract ingredients from plain text ──────────────────────────────────────
+// ─── Text extraction ──────────────────────────────────────────────────────────
 
 function extractIngredientsFromText(text) {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = text.split("\n").map(function(l) { return l.trim(); }).filter(Boolean);
   let inIngredients = false;
-  let ingredientLines = [];
+  const ingredientLines = [];
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (/^ingredients?$/i.test(line) || /^what you.?ll need$/i.test(line)) {
       inIngredients = true;
       continue;
     }
-    if (inIngredients && /^(directions?|instructions?|method|how to make|preparation|steps?)$/i.test(line)) {
+    if (inIngredients && /^(directions?|instructions?|method|how to make|preparation|steps?|step 1)$/i.test(line)) {
       break;
     }
     if (inIngredients) ingredientLines.push(line);
   }
 
-  // If no section header found, try whole doc
-  if (ingredientLines.length === 0) ingredientLines = lines;
-
+  const searchLines = ingredientLines.length > 0 ? ingredientLines : lines;
   const ingredients = [];
-  for (const line of ingredientLines) {
-    if (line.length < 3 || line.length > 120) continue;
-    if (/^(directions?|instructions?|notes?|tips?|step \d|print|save|share|jump to|serves|yield|prep|cook|total time|nutrition|per serving|submitted|tested by)/i.test(line)) continue;
 
-    // Match lines starting with a digit or unicode fraction
-    const startsWithQuantity = /^[\d¼½¾⅓⅔⅛⅜⅝⅞]/.test(line);
-    const startsWithBullet = /^[-•*·]\s/.test(line);
-    const cleanLine = line.replace(/^[-•*·]\s*/, "");
+  for (let i = 0; i < searchLines.length; i++) {
+    const line = searchLines[i];
+    if (line.length < 3 || line.length > 120) continue;
+    if (/^(directions?|instructions?|notes?|tips?|step \d|print|save|share|jump to|serves|yield|prep|cook|total time|nutrition|per serving|submitted|tested by|gather|preheat|mix |separate|layer|place|bake|slice)/i.test(line)) continue;
+
+    const startsWithQuantity = /^[\d\u00bc\u00bd\u00be\u2153\u2154\u215b\u215c\u215d\u215e]/.test(line);
+    const startsWithBullet = /^[-\u2022*\u00b7]\s/.test(line);
+    const cleanLine = line.replace(/^[-\u2022*\u00b7]\s*/, "");
 
     if (startsWithQuantity || startsWithBullet) {
-      const { name, quantity } = parseIngredientLine(cleanLine);
-      if (name && name.length > 1 && name.length < 80) {
-        ingredients.push({ name, quantity, section: detectSection(name) });
+      const parsed = parseIngredientLine(cleanLine);
+      if (parsed.name && parsed.name.length > 1 && parsed.name.length < 80) {
+        ingredients.push({ name: parsed.name, quantity: parsed.quantity, section: detectSection(parsed.name) });
       }
     }
   }
@@ -111,10 +113,11 @@ function extractIngredientsFromText(text) {
 }
 
 function extractRecipeName(text) {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  for (const line of lines.slice(0, 15)) {
-    if (line.length > 3 && line.length < 100 && !line.startsWith("http") && !line.startsWith("Firefox")) {
-      if (/^(print|save|share|jump|by |author|yield|serves|prep|cook|total|submitted|tested|ingredients?)/i.test(line)) continue;
+  const lines = text.split("\n").map(function(l) { return l.trim(); }).filter(Boolean);
+  for (let i = 0; i < Math.min(15, lines.length); i++) {
+    const line = lines[i];
+    if (line.length > 3 && line.length < 100 && !line.startsWith("http") && !line.startsWith("Firefox") && !/^\d/.test(line)) {
+      if (/^(print|save|share|jump|by |author|yield|serves|prep|cook|total|submitted|tested|ingredients?|firefox)/i.test(line)) continue;
       return line;
     }
   }
@@ -163,13 +166,12 @@ function parseMultipart(body, boundary) {
   return parts;
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
+// ─── Vercel handler ───────────────────────────────────────────────────────────
 
-module.exports.config = { api: { bodyParser: false } };
-
-module.exports.default = async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
+  // Read raw multipart body
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const body = Buffer.concat(chunks);
@@ -177,32 +179,36 @@ module.exports.default = async function handler(req, res) {
   const contentType = req.headers["content-type"] || "";
   const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
   if (!boundaryMatch) {
-    return res.status(400).json({ error: "Invalid request format" });
+    return res.status(400).json({ error: "Invalid request format — expected multipart/form-data" });
   }
 
   const parts = parseMultipart(body, boundaryMatch[1]);
-  const pdfPart = parts.find(
-    (p) => p.contentType === "application/pdf" || p.filename.toLowerCase().endsWith(".pdf")
-  );
+  const pdfPart = parts.find(function(p) {
+    return p.contentType === "application/pdf" || p.filename.toLowerCase().endsWith(".pdf");
+  });
 
   if (!pdfPart) {
-    return res.status(400).json({ error: "No PDF file found in request" });
+    return res.status(400).json({ error: "No PDF found in upload" });
   }
 
+  // Parse PDF
   let pdfText = "";
   try {
+    const pdfParse = require("pdf-parse");
     const parsed = await pdfParse(pdfPart.data);
     pdfText = parsed.text || "";
   } catch (e) {
-    return res.status(400).json({ error: "Could not read PDF: " + e.message });
+    return res.status(500).json({ error: "PDF parse error: " + e.message });
   }
 
   if (!pdfText || pdfText.trim().length < 20) {
-    return res.status(400).json({ error: "PDF appears empty or image-only. Use File → Print → Save as PDF in your browser on the recipe page." });
+    return res.status(400).json({ error: "PDF is empty or image-only. Open the recipe in your browser, then File \u2192 Print \u2192 Save as PDF." });
   }
 
   const ingredients = extractIngredientsFromText(pdfText);
   const name = extractRecipeName(pdfText);
 
-  return res.status(200).json({ name, ingredients });
+  return res.status(200).json({ name: name, ingredients: ingredients });
 };
+
+module.exports.config = { api: { bodyParser: false } };
