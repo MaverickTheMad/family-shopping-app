@@ -1,9 +1,10 @@
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
+// Using CommonJS require for pdf-parse compatibility
+const pdfParse = require("pdf-parse");
 
-// ─── Auto-category detection ──────────────────────────────────────────────────
+// ─── Category detection ───────────────────────────────────────────────────────
 
 const CATEGORY_RULES = [
-  { section: "Produce", keywords: ["garlic","onion","tomato","potato","carrot","celery","spinach","broccoli","pepper","lemon","lime","mushroom","ginger","basil","thyme","rosemary","sage","parsley","cilantro","mint","dill","oregano","kale","cabbage","cucumber","zucchini","squash","avocado","corn","green bean","jarlic","minced garlic","scallion","shallot","leek","artichoke","arugula","asparagus","beet","bok choy","fennel","radish","turnip","yam","sweet potato","apple","banana","berry","cherry","grape","mango","peach","pear","plum","strawberry"] },
+  { section: "Produce", keywords: ["garlic","onion","tomato","potato","carrot","celery","spinach","broccoli","pepper","lemon","lime","mushroom","ginger","basil","thyme","rosemary","sage","parsley","cilantro","mint","dill","oregano","kale","cabbage","cucumber","zucchini","squash","avocado","corn","green bean","jarlic","minced garlic","scallion","shallot","leek","artichoke","arugula","asparagus","beet","fennel","radish","turnip","yam","sweet potato","apple","banana","berry","cherry","grape","mango","peach","pear","plum","strawberry"] },
   { section: "Meat & Seafood", keywords: ["chicken","beef","steak","pork","turkey","lamb","salmon","shrimp","fish","bacon","sausage","kielbasa","ham","salami","pepperoni","ground beef","ground pork","ribeye","tenderloin","brisket","meatball","chorizo","prosciutto","deli","spicy sausage","ground sausage","ground turkey","cod","tilapia","tuna","crab","lobster","scallop","anchovy","duck","veal","venison","bison"] },
   { section: "Dairy & Eggs", keywords: ["butter","milk","cream","cheese","egg","yogurt","parmesan","mozzarella","cheddar","ricotta","boursin","queso","oatmilk","keifer","kefir","cold foam","heavy cream","sour cream","cream cheese","buttermilk","ghee","provolone","gouda","brie","feta","swiss","jack cheese","pepper jack","shredded"] },
   { section: "Bakery & Bread", keywords: ["bread","roll","bun","tortilla","flatbread","pita","naan","bagel","croissant","hawaiian","sourdough","baguette","english muffin","hoagie","ciabatta","focaccia"] },
@@ -36,7 +37,9 @@ const UNIT_RE = new RegExp(`^(${UNITS.join("|")})\\b`, "i");
 
 function parseIngredientLine(raw) {
   let str = raw.trim();
-  for (const [uc, rep] of Object.entries(UNICODE_FRACTIONS)) str = str.replace(new RegExp(uc, "g"), ` ${rep}`);
+  for (const [uc, rep] of Object.entries(UNICODE_FRACTIONS)) {
+    str = str.replace(new RegExp(uc, "g"), ` ${rep}`);
+  }
   str = str.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   str = str.replace(/^(one|two|three|four|five|six|seven|eight|nine|ten)\b/i, (m) => WORD_NUMBERS[m.toLowerCase()] || m);
 
@@ -66,11 +69,10 @@ function parseIngredientLine(raw) {
   return { name, quantity };
 }
 
-// ─── Extract ingredients from PDF plain text ──────────────────────────────────
+// ─── Extract ingredients from plain text ──────────────────────────────────────
 
 function extractIngredientsFromText(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const ingredients = [];
   let inIngredients = false;
   let ingredientLines = [];
 
@@ -85,9 +87,9 @@ function extractIngredientsFromText(text) {
     if (inIngredients) ingredientLines.push(line);
   }
 
-  // If no section header found, use whole doc
   if (ingredientLines.length === 0) ingredientLines = lines;
 
+  const ingredients = [];
   for (const line of ingredientLines) {
     if (line.length < 3 || line.length > 120) continue;
     if (/^(instructions?|directions?|notes?|tips?|step \d|print|save|share|jump to|serves|yield|prep|cook|total time)/i.test(line)) continue;
@@ -103,7 +105,6 @@ function extractIngredientsFromText(text) {
       }
     }
   }
-
   return ingredients;
 }
 
@@ -118,45 +119,18 @@ function extractRecipeName(text) {
   return "";
 }
 
-// ─── Vercel handler ───────────────────────────────────────────────────────────
+// ─── Simple multipart parser ──────────────────────────────────────────────────
 
-export const config = { api: { bodyParser: false } };
-
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
-
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const body = Buffer.concat(chunks);
-
-  const contentType = req.headers["content-type"] || "";
-  const boundaryMatch = contentType.match(/boundary=(.+)$/);
-  if (!boundaryMatch) return res.status(400).json({ error: "Invalid request format" });
-
-  const parts = parseMultipart(body, boundaryMatch[1]);
-  const pdfPart = parts.find((p) => p.contentType === "application/pdf" || (p.filename && p.filename.toLowerCase().endsWith(".pdf")));
-
-  if (!pdfPart) return res.status(400).json({ error: "No PDF file found in request" });
-
-  let pdfText = "";
-  try {
-    const data = await pdfParse(pdfPart.data);
-    pdfText = data.text;
-  } catch (e) {
-    return res.status(400).json({ error: "Could not read PDF. Make sure it's a valid PDF file." });
+function findInBuffer(buffer, search, start = 0) {
+  for (let i = start; i <= buffer.length - search.length; i++) {
+    let found = true;
+    for (let j = 0; j < search.length; j++) {
+      if (buffer[i + j] !== search[j]) { found = false; break; }
+    }
+    if (found) return i;
   }
-
-  if (!pdfText || pdfText.trim().length < 20) {
-    return res.status(400).json({ error: "PDF appears to be empty or image-only. Try a text-based PDF (print-to-PDF from a recipe site)." });
-  }
-
-  const ingredients = extractIngredientsFromText(pdfText);
-  const name = extractRecipeName(pdfText);
-
-  return res.status(200).json({ name, ingredients });
+  return -1;
 }
-
-// ─── Multipart parser ─────────────────────────────────────────────────────────
 
 function parseMultipart(body, boundary) {
   const parts = [];
@@ -164,14 +138,14 @@ function parseMultipart(body, boundary) {
   let start = 0;
 
   while (start < body.length) {
-    const sepIdx = indexOf(body, sep, start);
+    const sepIdx = findInBuffer(body, sep, start);
     if (sepIdx === -1) break;
     const headerStart = sepIdx + sep.length + 2;
-    const headerEnd = indexOf(body, Buffer.from("\r\n\r\n"), headerStart);
+    const headerEnd = findInBuffer(body, Buffer.from("\r\n\r\n"), headerStart);
     if (headerEnd === -1) break;
     const headerText = body.slice(headerStart, headerEnd).toString();
     const dataStart = headerEnd + 4;
-    const nextSep = indexOf(body, sep, dataStart);
+    const nextSep = findInBuffer(body, sep, dataStart);
     const dataEnd = nextSep === -1 ? body.length : nextSep - 2;
     const data = body.slice(dataStart, dataEnd);
     const filenameMatch = headerText.match(/filename="([^"]+)"/);
@@ -186,13 +160,47 @@ function parseMultipart(body, boundary) {
   return parts;
 }
 
-function indexOf(buffer, search, start = 0) {
-  for (let i = start; i <= buffer.length - search.length; i++) {
-    let found = true;
-    for (let j = 0; j < search.length; j++) {
-      if (buffer[i + j] !== search[j]) { found = false; break; }
-    }
-    if (found) return i;
+// ─── Handler ──────────────────────────────────────────────────────────────────
+
+export const config = { api: { bodyParser: false } };
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).end();
+
+  // Read raw body
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const body = Buffer.concat(chunks);
+
+  const contentType = req.headers["content-type"] || "";
+  const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
+  if (!boundaryMatch) {
+    return res.status(400).json({ error: "Invalid request — expected multipart form data" });
   }
-  return -1;
+
+  const parts = parseMultipart(body, boundaryMatch[1]);
+  const pdfPart = parts.find(
+    (p) => p.contentType === "application/pdf" || p.filename.toLowerCase().endsWith(".pdf")
+  );
+
+  if (!pdfPart) {
+    return res.status(400).json({ error: "No PDF file found in request" });
+  }
+
+  let pdfText = "";
+  try {
+    const parsed = await pdfParse(pdfPart.data);
+    pdfText = parsed.text || "";
+  } catch (e) {
+    return res.status(400).json({ error: "Could not read PDF. Make sure it's a valid text-based PDF." });
+  }
+
+  if (!pdfText || pdfText.trim().length < 20) {
+    return res.status(400).json({ error: "PDF appears empty or image-only. Use File → Print → Save as PDF from your browser on the recipe page." });
+  }
+
+  const ingredients = extractIngredientsFromText(pdfText);
+  const name = extractRecipeName(pdfText);
+
+  return res.status(200).json({ name, ingredients });
 }
