@@ -246,7 +246,8 @@ export default function App() {
       if (!map[sec]) map[sec] = [];
       map[sec].push({ name, count: info.count, quantities: info.quantities });
     });
-    extras.filter((e) => e.active).forEach((e) => {
+    // Active one-time extras + all staples always appear
+    extras.filter((e) => e.active || e.is_staple).forEach((e) => {
       const sec = getSection(e.name, sections);
       if (!map[sec]) map[sec] = [];
       const ex = map[sec].find((x) => x.name === e.name);
@@ -285,9 +286,10 @@ export default function App() {
     setExtras((p) => p.map((x) => x.id === id ? { ...x, active: !x.active } : x));
   }
 
-  async function addExtra(name, quantity = "") {
+  async function addExtra(name, quantity = "", isStaple = false) {
     if (!name.trim()) return;
-    const { data } = await supabase.from("extras").insert({ name: name.trim(), quantity: quantity.trim(), active: true, sort_order: extras.length }).select().single();
+    // Staples are always active (they always appear on the list)
+    const { data } = await supabase.from("extras").insert({ name: name.trim(), quantity: quantity.trim(), active: true, is_staple: isStaple, sort_order: extras.length }).select().single();
     if (data) setExtras((p) => [...p, data]);
   }
 
@@ -347,8 +349,9 @@ export default function App() {
   async function startNewTrip() {
     if (!confirm("Start a new trip? Clears selected meals, pantry checks, and shopping check-offs.")) return;
     setSelectedMeals([]); setPantryItems([]); setCheckedItems([]);
-    await supabase.from("extras").update({ active: false }).neq("id", "00000000-0000-0000-0000-000000000000");
-    setExtras((p) => p.map((e) => ({ ...e, active: false })));
+    // Reset one-time extras only — keep staples active
+    await supabase.from("extras").update({ active: false }).eq("is_staple", false);
+    setExtras((p) => p.map((e) => e.is_staple ? e : { ...e, active: false }));
     showToast("Fresh trip started");
     setTab("meals");
   }
@@ -417,7 +420,7 @@ export default function App() {
         <BottomNav
           tab={tab}
           setTab={setTab}
-          counts={{ meals: selectedMeals.length, pantry: pantrySkipCount, extras: extras.filter((e) => e.active).length, list: totalItems, recipes: recipes.length }}
+          counts={{ meals: selectedMeals.length, pantry: pantrySkipCount, extras: extras.filter((e) => e.active || e.is_staple).length, list: totalItems, recipes: recipes.length }}
         />
         {editingRecipe && (
           <RecipeEditor
@@ -617,36 +620,101 @@ function PantryTab({ ingredients, agg, pantryItems, onToggle, skipCount, section
 function ExtrasTab({ extras, onToggle, onAdd, onDelete, onUpdateQty }) {
   const [input, setInput] = useState("");
   const [inputQty, setInputQty] = useState("");
-  const sorted = [...extras].sort((a, b) => { if (a.active !== b.active) return a.active ? -1 : 1; return a.name.localeCompare(b.name); });
-  function handleAdd() { if (input.trim()) { onAdd(input, inputQty); setInput(""); setInputQty(""); } }
+  const [isStaple, setIsStaple] = useState(false);
+
+  function handleAdd() {
+    if (input.trim()) { onAdd(input, inputQty, isStaple); setInput(""); setInputQty(""); }
+  }
+
+  const staples = [...extras.filter((e) => e.is_staple)].sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  const oneTime = [...extras.filter((e) => !e.is_staple)].sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
   return (
     <section className="pt-4">
-      <SectionHeader eyebrow="step three" title="extras & staples" subtitle="non-recipe items you need." />
-      <div className="flex gap-2 mb-4">
-        <input value={inputQty} onChange={(e) => setInputQty(e.target.value)} placeholder="qty" className="w-20 px-3 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 shrink-0" />
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAdd()} placeholder="add an item…" className="flex-1 px-4 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10" />
-        <button onClick={handleAdd} className="bg-stone-900 text-amber-50 px-4 py-2.5 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800"><Plus className="w-4 h-4" />add</button>
+      <SectionHeader eyebrow="step three" title="extras & staples" subtitle="running low items always appear on your list. one-time extras are for this trip only." />
+
+      {/* Add item row */}
+      <div className="space-y-2 mb-6">
+        <div className="flex gap-2">
+          <input value={inputQty} onChange={(e) => setInputQty(e.target.value)} placeholder="qty" className="w-20 px-3 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 shrink-0" />
+          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAdd()} placeholder="add an item…" className="flex-1 px-4 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10" />
+          <button onClick={handleAdd} className="bg-stone-900 text-amber-50 px-4 py-2.5 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800 shrink-0"><Plus className="w-4 h-4" />add</button>
+        </div>
+        {/* Type toggle */}
+        <div className="flex gap-2 px-1">
+          <button
+            onClick={() => setIsStaple(false)}
+            className={`flex-1 py-2 rounded-full text-xs font-medium transition-colors border ${!isStaple ? "bg-amber-800 text-amber-50 border-amber-800" : "bg-white text-stone-500 border-stone-200"}`}
+          >
+            one-time extra
+          </button>
+          <button
+            onClick={() => setIsStaple(true)}
+            className={`flex-1 py-2 rounded-full text-xs font-medium transition-colors border ${isStaple ? "bg-red-700 text-white border-red-700" : "bg-white text-stone-500 border-stone-200"}`}
+          >
+            🔴 running low
+          </button>
+        </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-        {sorted.map((item) => (
-          <div key={item.id} className={`group flex items-center gap-2 px-3 py-2.5 bg-white rounded-lg border card-shadow ${item.active ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70"}`}>
-            <button onClick={() => onToggle(item.id)} className="flex items-center gap-2 flex-1 text-left min-w-0">
-              <Checkbox checked={item.active} />
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm truncate ${item.active ? "text-stone-800" : "text-stone-600"}`}>{item.name}</div>
-              </div>
-            </button>
-            <input
-              value={item.quantity || ""}
-              onChange={(e) => onUpdateQty(item.id, e.target.value)}
-              placeholder="qty"
-              className="w-16 text-xs bg-stone-50 border border-stone-200 rounded px-2 py-1 focus:outline-none focus:border-amber-700/50 text-stone-600 shrink-0"
-            />
-            <button onClick={() => onDelete(item.id)} className="text-stone-300 hover:text-red-700 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+
+      {/* Running Low section */}
+      <div className="mb-6">
+        <SectionLabel name="Running Low" count={staples.filter((e) => e.active).length + " / " + staples.length} />
+        <p className="text-xs text-stone-400 mb-3 px-1">These always appear on your shopping list until you remove them.</p>
+        {staples.length === 0 ? (
+          <div className="text-xs text-stone-400 italic px-1">nothing flagged as running low yet.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {staples.map((item) => (
+              <ExtraItem key={item.id} item={item} onToggle={onToggle} onDelete={onDelete} onUpdateQty={onUpdateQty} accentClass="border-red-200 bg-red-50/30" activeAccentClass="border-red-400/50 bg-red-50/60" />
+            ))}
           </div>
-        ))}
+        )}
+      </div>
+
+      {/* One-time extras section */}
+      <div>
+        <SectionLabel name="One-Time Extras" count={oneTime.filter((e) => e.active).length + " / " + oneTime.length} />
+        <p className="text-xs text-stone-400 mb-3 px-1">Tap to add to this trip's list.</p>
+        {oneTime.length === 0 ? (
+          <div className="text-xs text-stone-400 italic px-1">no extras added yet.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {oneTime.map((item) => (
+              <ExtraItem key={item.id} item={item} onToggle={onToggle} onDelete={onDelete} onUpdateQty={onUpdateQty} accentClass="border-amber-700/40 bg-amber-50/40" activeAccentClass="border-amber-700/40 bg-amber-50/40" />
+            ))}
+          </div>
+        )}
       </div>
     </section>
+  );
+}
+
+function ExtraItem({ item, onToggle, onDelete, onUpdateQty, accentClass, activeAccentClass }) {
+  return (
+    <div className={`group flex items-center gap-2 px-3 py-2.5 bg-white rounded-lg border card-shadow ${item.active ? activeAccentClass : "border-stone-200/70"}`}>
+      <button onClick={() => onToggle(item.id)} className="flex items-center gap-2 flex-1 text-left min-w-0">
+        <Checkbox checked={item.active} />
+        <div className="flex-1 min-w-0">
+          <div className={`text-sm truncate ${item.active ? "text-stone-800" : "text-stone-600"}`}>{item.name}</div>
+        </div>
+      </button>
+      <input
+        value={item.quantity || ""}
+        onChange={(e) => onUpdateQty(item.id, e.target.value)}
+        placeholder="qty"
+        className="w-16 text-xs bg-stone-50 border border-stone-200 rounded px-2 py-1 focus:outline-none focus:border-amber-700/50 text-stone-600 shrink-0"
+      />
+      <button onClick={() => onDelete(item.id)} className="text-stone-300 hover:text-red-700 p-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
   );
 }
 
