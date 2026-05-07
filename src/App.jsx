@@ -688,13 +688,29 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-      // Extract text from all pages
+      // Extract text from all pages using position data to reconstruct lines
       let fullText = "";
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        const pageText = content.items.map((item) => item.str).join(" ");
-        fullText += pageText + "\n";
+
+        // Group items into lines by their Y position
+        const lineMap = {};
+        for (const item of content.items) {
+          if (!item.str.trim()) continue;
+          // Round Y to nearest 2pts to group items on the same line
+          const y = Math.round(item.transform[5] / 2) * 2;
+          if (!lineMap[y]) lineMap[y] = [];
+          lineMap[y].push({ x: item.transform[4], str: item.str });
+        }
+
+        // Sort lines top-to-bottom (higher Y = higher on page in PDF coords)
+        const sortedYs = Object.keys(lineMap).map(Number).sort((a, b) => b - a);
+        for (const y of sortedYs) {
+          const items = lineMap[y].sort((a, b) => a.x - b.x);
+          const lineText = items.map((it) => it.str).join(" ").trim();
+          if (lineText) fullText += lineText + "\n";
+        }
       }
 
       if (!fullText.trim()) {
@@ -745,25 +761,26 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
         const unitMatch = rest.match(UNIT_RE);
         if (unitMatch) { quantity = quantity + " " + unitMatch[0].trim(); rest = rest.slice(unitMatch[0].length).trim(); }
       }
-      let ingName = rest.replace(/^,\s*/, "").replace(/\([^)]*\)/g, "").replace(/,.*$/, "").replace(/\s+/g, " ").trim();
+      let ingName = rest
+        .replace(/^,\s*/, "")
+        .replace(/\([^)]*\)/g, "")
+        .replace(/,.*$/, "")
+        // Remove trailing standalone numbers (page numbers / next-ingredient bleeding)
+        .replace(/\s+\d+$/, "")
+        .replace(/\s+/g, " ")
+        .trim();
       if (ingName.length > 0) ingName = ingName.charAt(0).toUpperCase() + ingName.slice(1);
       return { name: ingName, quantity };
     }
 
-    // pdfjs returns text without newlines between items — split on common patterns
-    // Re-split on ingredient-looking boundaries
-    const normalized = text
-      .replace(/(\d)\s+(cup|tablespoon|teaspoon|pound|ounce|oz|lb|tsp|tbsp|clove|can|jar|bag|slice|bunch|stick)/gi, "\n$1 $2")
-      .replace(/([\u00bc\u00bd\u00be\u2153\u2154\u215b\u215c\u215d\u215e])\s+/g, "\n$1 ");
-
-    const lines = normalized.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
     // Find ingredient section
     let inIngredients = false;
     const ingredientLines = [];
     for (const line of lines) {
       if (/^ingredients?$/i.test(line) || /^what you.?ll need$/i.test(line)) { inIngredients = true; continue; }
-      if (inIngredients && /^(directions?|instructions?|method|steps?|step 1|preparation)$/i.test(line)) break;
+      if (inIngredients && /^(directions?|instructions?|method|steps?|step 1|preparation|nutrition)$/i.test(line)) break;
       if (inIngredients) ingredientLines.push(line);
     }
     const searchLines = ingredientLines.length > 0 ? ingredientLines : lines;
@@ -771,7 +788,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
     const ingredients = [];
     for (const line of searchLines) {
       if (line.length < 3 || line.length > 150) continue;
-      if (/^(directions?|instructions?|notes?|step \d|serves|yield|prep|cook|total|nutrition|per serving|submitted|tested|gather|preheat|firefox|https?:|calories|carb|protein|fat|sodium)/i.test(line)) continue;
+      if (/^(directions?|instructions?|notes?|step \d|serves|yield|prep|cook|total|nutrition|per serving|submitted|tested|gather|preheat|firefox|https?:|calories|carb|protein|fat|sodium|cholesterol|potassium|vitamin)/i.test(line)) continue;
       const startsWithQty = /^[\d\u00bc\u00bd\u00be\u2153\u2154\u215b\u215c\u215d\u215e]/.test(line);
       const startsWithBullet = /^[-\u2022*\u00b7]\s/.test(line);
       if (startsWithQty || startsWithBullet) {
@@ -782,12 +799,14 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
       }
     }
 
-    // Extract recipe name — first non-metadata line
+    // Extract recipe name — first clean non-metadata line
     let recipeName = "";
     for (const line of lines.slice(0, 20)) {
+      // Skip lines with trailing numbers (page artifacts), URLs, metadata
+      if (/\s+\d+$/.test(line) && line.length < 30) continue;
       if (line.length > 3 && line.length < 100 && !/^https?:/i.test(line) && !/^firefox/i.test(line) && !/^\d/.test(line)) {
-        if (/^(print|save|share|jump|by |author|yield|serves|prep|cook|total|submitted|tested|ingredients?)/i.test(line)) continue;
-        recipeName = line;
+        if (/^(print|save|share|jump|by |author|yield|serves|prep|cook|total|submitted|tested|ingredients?|gather|preheat)/i.test(line)) continue;
+        recipeName = line.replace(/\s+\d+$/, "").trim();
         break;
       }
     }
