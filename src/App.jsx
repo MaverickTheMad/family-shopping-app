@@ -655,6 +655,61 @@ function ExtrasTab({ extras, onToggle, onAdd, onDelete, onUpdateQty }) {
 function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
   const [reassigning, setReassigning] = useState(null);
 
+  function handlePrint() {
+    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const lines = groups.map((g) => {
+      const header = `\n${g.section.toUpperCase()}\n${"─".repeat(g.section.length)}`;
+      const items = g.items.map((item) => {
+        const qty = item.quantities && item.quantities.length > 0 ? item.quantities.join(" + ") : "";
+        return qty ? `  ${item.name} — ${qty}` : `  ${item.name}`;
+      }).join("\n");
+      return `${header}\n${items}`;
+    }).join("\n");
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Shopping List — ${today}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Plus Jakarta Sans', sans-serif; color: #1c1917; background: #fff; padding: 40px; max-width: 600px; margin: 0 auto; }
+          h1 { font-family: 'Fraunces', Georgia, serif; font-size: 32px; font-weight: 700; color: #1c1917; margin-bottom: 4px; }
+          .date { font-size: 13px; color: #78716c; margin-bottom: 32px; text-transform: uppercase; letter-spacing: 0.1em; }
+          .section { margin-bottom: 24px; }
+          .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.18em; color: #92400e; border-bottom: 1px solid #fde68a; padding-bottom: 4px; margin-bottom: 10px; }
+          .item { display: flex; align-items: baseline; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f5f5f4; }
+          .item:last-child { border-bottom: none; }
+          .item-name { font-size: 15px; font-weight: 500; }
+          .item-qty { font-size: 13px; color: #78716c; margin-left: 12px; white-space: nowrap; }
+          .checkbox { width: 14px; height: 14px; border: 1.5px solid #d6d3d1; border-radius: 3px; display: inline-block; margin-right: 10px; flex-shrink: 0; }
+          @media print { body { padding: 20px; } }
+        </style>
+      </head>
+      <body>
+        <h1>Shopping List</h1>
+        <div class="date">${today}</div>
+        ${groups.map((g) => `
+          <div class="section">
+            <div class="section-title">${g.section}</div>
+            ${g.items.map((item) => {
+              const qty = item.quantities && item.quantities.length > 0 ? item.quantities.join(" + ") : "";
+              return `<div class="item"><span><span class="checkbox"></span><span class="item-name">${item.name}</span></span>${qty ? `<span class="item-qty">${qty}</span>` : ""}</div>`;
+            }).join("")}
+          </div>
+        `).join("")}
+      </body>
+      </html>
+    `;
+
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 500);
+  }
+
   if (total === 0) {
     return (
       <section className="pt-4">
@@ -668,7 +723,16 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
 
   return (
     <section className="pt-4">
-      <SectionHeader eyebrow="the list" title="ready to shop" subtitle={`${checkedCount} of ${total} grabbed · grouped by store section`} />
+      <div className="flex items-end justify-between mb-4">
+        <SectionHeader eyebrow="the list" title="ready to shop" subtitle={`${checkedCount} of ${total} grabbed · grouped by store section`} />
+        <button
+          onClick={handlePrint}
+          className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full border border-stone-300/70 text-stone-500 hover:text-amber-800 hover:border-amber-700/40 hover:bg-amber-50/40 transition-colors mb-4"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+          print
+        </button>
+      </div>
       <div className="space-y-5">
         {groups.map((g) => (
           <div key={g.section}>
