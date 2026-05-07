@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   ChefHat, ShoppingCart, Package, PlusCircle, Search, X, Check,
   Trash2, Edit3, ExternalLink, RefreshCw, Plus, Save, Link, Loader2,
+  BookOpen, Clock, Users,
 } from "lucide-react";
 
 const supabase = createClient(
@@ -147,6 +148,7 @@ export default function App() {
   const [checkedItems, setCheckedItems] = useState([]);
   const [tab, setTab] = useState("meals");
   const [editingRecipe, setEditingRecipe] = useState(null);
+  const [viewingRecipe, setViewingRecipe] = useState(null);
   const [toast, setToast] = useState("");
   const stateTimer = useRef(null);
 
@@ -251,7 +253,7 @@ export default function App() {
   }
 
   async function saveRecipe(recipe) {
-    const payload = { name: recipe.name, url: recipe.url || null, category: recipe.category, notes: recipe.notes || "", ingredients: recipe.ingredients };
+    const payload = { name: recipe.name, url: recipe.url || null, category: recipe.category, notes: recipe.notes || "", cook_time: recipe.cook_time || "", servings: recipe.servings || "", ingredients: recipe.ingredients };
     const newSections = { ...sections };
     const toUpsert = [];
     recipe.ingredients.forEach((raw) => {
@@ -317,7 +319,15 @@ export default function App() {
               selected={selectedMeals}
               onToggle={toggleMeal}
               onEdit={setEditingRecipe}
-              onAddRecipe={() => setEditingRecipe({ id: "new", name: "", url: "", category: "Other", ingredients: [] })}
+              onAddRecipe={() => setEditingRecipe({ id: "new", name: "", url: "", category: "Other", notes: "", cook_time: "", servings: "", ingredients: [] })}
+            />
+          )}
+          {tab === "recipes" && (
+            <RecipesTab
+              recipes={recipes}
+              selected={selectedMeals}
+              onView={setViewingRecipe}
+              onAddRecipe={() => setEditingRecipe({ id: "new", name: "", url: "", category: "Other", notes: "", cook_time: "", servings: "", ingredients: [] })}
             />
           )}
           {tab === "pantry" && (
@@ -347,7 +357,7 @@ export default function App() {
         <BottomNav
           tab={tab}
           setTab={setTab}
-          counts={{ meals: selectedMeals.length, pantry: pantrySkipCount, extras: extras.filter((e) => e.active).length, list: totalItems }}
+          counts={{ meals: selectedMeals.length, pantry: pantrySkipCount, extras: extras.filter((e) => e.active).length, list: totalItems, recipes: recipes.length }}
         />
         {editingRecipe && (
           <RecipeEditor
@@ -357,6 +367,15 @@ export default function App() {
             onCancel={() => setEditingRecipe(null)}
             onDelete={editingRecipe.id && !String(editingRecipe.id).startsWith("new") ? () => deleteRecipe(editingRecipe.id) : null}
             onSetSection={handleSetSection}
+          />
+        )}
+        {viewingRecipe && (
+          <RecipeView
+            recipe={viewingRecipe}
+            isSelected={selectedMeals.includes(viewingRecipe.id)}
+            onToggle={() => toggleMeal(viewingRecipe.id)}
+            onEdit={() => { setEditingRecipe(viewingRecipe); setViewingRecipe(null); }}
+            onClose={() => setViewingRecipe(null)}
           />
         )}
         {toast && (
@@ -635,6 +654,8 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   const [url, setUrl] = useState(recipe.url || "");
   const [category, setCategory] = useState(recipe.category || "Other");
   const [notes, setNotes] = useState(recipe.notes || "");
+  const [cookTime, setCookTime] = useState(recipe.cook_time || "");
+  const [servings, setServings] = useState(recipe.servings || "");
   const [ingredients, setIngredients] = useState(
     (recipe.ingredients || []).map(normIng)
   );
@@ -840,7 +861,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   async function handleSave() {
     if (!name.trim()) { alert("Give the recipe a name first."); return; }
     setSaving(true);
-    await onSave({ ...recipe, name: name.trim(), url: url.trim(), category, notes, ingredients });
+    await onSave({ ...recipe, name: name.trim(), url: url.trim(), category, notes, cook_time: cookTime, servings, ingredients });
     setSaving(false);
   }
 
@@ -901,6 +922,17 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
               rows={3}
               className="mt-1 w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10 resize-none"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">cook time</label>
+              <input value={cookTime} onChange={(e) => setCookTime(e.target.value)} placeholder="e.g. 35 mins" className="mt-1 w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10" />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">servings</label>
+              <input value={servings} onChange={(e) => setServings(e.target.value)} placeholder="e.g. 4–6" className="mt-1 w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10" />
+            </div>
           </div>
 
           <div>
@@ -995,6 +1027,7 @@ function EmptyState({ icon, message }) {
 function BottomNav({ tab, setTab, counts }) {
   const items = [
     { key: "meals", label: "meals", icon: ChefHat, badge: counts.meals },
+    { key: "recipes", label: "recipes", icon: BookOpen, badge: 0 },
     { key: "pantry", label: "pantry", icon: Package, badge: counts.pantry },
     { key: "extras", label: "extras", icon: PlusCircle, badge: counts.extras },
     { key: "list", label: "list", icon: ShoppingCart, badge: counts.list },
@@ -1021,5 +1054,200 @@ function BottomNav({ tab, setTab, counts }) {
         })}
       </div>
     </nav>
+  );
+}
+
+// ─── Recipes Tab ──────────────────────────────────────────────────────────────
+
+function RecipesTab({ recipes, selected, onView, onAddRecipe }) {
+  const [search, setSearch] = useState("");
+  const [filterCat, setFilterCat] = useState("All");
+  const [sortBy, setSortBy] = useState("az");
+
+  const filtered = recipes
+    .filter((r) => filterCat === "All" || (r.category || "Other") === filterCat)
+    .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === "az") return a.name.localeCompare(b.name);
+      if (sortBy === "za") return b.name.localeCompare(a.name);
+      if (sortBy === "ingredients") return (b.ingredients?.length || 0) - (a.ingredients?.length || 0);
+      return 0;
+    });
+
+  return (
+    <section className="pt-4">
+      <SectionHeader eyebrow="recipe hub" title="all recipes" subtitle={`${recipes.length} recipes in your collection`} />
+
+      <div className="flex gap-2 mb-4">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search recipes" className="w-full pl-9 pr-3 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10" />
+        </div>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-white border border-stone-200 rounded-full text-xs px-3 py-2.5 text-stone-600 focus:outline-none focus:border-amber-700/50">
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="ingredients">Most ingredients</option>
+        </select>
+        <button onClick={onAddRecipe} className="bg-stone-900 text-amber-50 px-4 py-2.5 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800 shrink-0">
+          <Plus className="w-4 h-4" />new
+        </button>
+      </div>
+
+      <div className="flex gap-1.5 mb-5 overflow-x-auto pb-1 -mx-1 px-1">
+        {["All", ...RECIPE_CATEGORIES].map((c) => (
+          <button key={c} onClick={() => setFilterCat(c)} className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${filterCat === c ? "bg-amber-800 text-amber-50" : "bg-white text-stone-600 border border-stone-200"}`}>{c}</button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={<BookOpen className="w-8 h-8" />} message="no recipes match." />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {filtered.map((r) => {
+            const ings = (r.ingredients || []).map(normIng);
+            const isSelected = selected.includes(r.id);
+            return (
+              <button
+                key={r.id}
+                onClick={() => onView(r)}
+                className={`text-left bg-white rounded-2xl border card-shadow p-4 hover:border-amber-700/30 hover:bg-amber-50/20 transition-all ${isSelected ? "border-amber-700/40 bg-amber-50/30" : "border-stone-200/70"}`}
+              >
+                {/* Category + selected badge */}
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    isSelected ? "bg-amber-800 text-amber-50" : "bg-stone-100 text-stone-500"
+                  }`}>
+                    {isSelected ? "✓ this week" : (r.category || "Other")}
+                  </span>
+                  {r.url && <ExternalLink className="w-3.5 h-3.5 text-stone-300" />}
+                </div>
+
+                {/* Name */}
+                <div className="font-display text-xl leading-tight text-stone-900 mb-2">{r.name}</div>
+
+                {/* Meta row */}
+                <div className="flex items-center gap-3 text-xs text-stone-400 mb-2">
+                  {r.cook_time && (
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{r.cook_time}</span>
+                  )}
+                  {r.servings && (
+                    <span className="flex items-center gap-1"><Users className="w-3 h-3" />{r.servings}</span>
+                  )}
+                  {ings.length > 0 && (
+                    <span>{ings.length} ingredient{ings.length !== 1 ? "s" : ""}</span>
+                  )}
+                </div>
+
+                {/* Notes preview */}
+                {r.notes && (
+                  <div className="text-xs text-stone-400 italic line-clamp-2 mb-2">{r.notes}</div>
+                )}
+
+                {/* Ingredient preview chips */}
+                {ings.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {ings.slice(0, 4).map((ing, i) => (
+                      <span key={i} className="text-[10px] bg-stone-100 text-stone-500 rounded-full px-2 py-0.5">{ing.name}</span>
+                    ))}
+                    {ings.length > 4 && <span className="text-[10px] text-stone-400">+{ings.length - 4} more</span>}
+                  </div>
+                )}
+                {ings.length === 0 && (
+                  <div className="text-xs text-amber-700/60 italic">no ingredients yet</div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Recipe View (read-only modal) ────────────────────────────────────────────
+
+function RecipeView({ recipe, isSelected, onToggle, onEdit, onClose }) {
+  const ings = (recipe.ingredients || []).map(normIng);
+  const grouped = {};
+  ings.forEach((ing) => {
+    const sec = detectSection(ing.name);
+    if (!grouped[sec]) grouped[sec] = [];
+    grouped[sec].push(ing);
+  });
+
+  return (
+    <div className="fixed inset-0 bg-stone-900/50 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div className="bg-[#FBF6EC] w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl flex flex-col max-h-[92vh]" onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="p-5 border-b border-stone-200/70">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full">{recipe.category || "Other"}</span>
+                {recipe.url && (
+                  <a href={recipe.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} className="text-stone-400 hover:text-amber-800">
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+              <h2 className="font-display text-2xl sm:text-3xl text-stone-900 leading-tight">{recipe.name}</h2>
+              <div className="flex items-center gap-4 mt-2 text-sm text-stone-500">
+                {recipe.cook_time && <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />{recipe.cook_time}</span>}
+                {recipe.servings && <span className="flex items-center gap-1.5"><Users className="w-4 h-4" />{recipe.servings} servings</span>}
+                {ings.length > 0 && <span>{ings.length} ingredients</span>}
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-700 shrink-0"><X className="w-5 h-5" /></button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-5 space-y-5">
+          {/* Notes */}
+          {recipe.notes && (
+            <div className="bg-amber-50/60 border border-amber-200/40 rounded-xl p-4">
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-800 mb-1">Notes</div>
+              <p className="text-sm text-stone-700 leading-relaxed">{recipe.notes}</p>
+            </div>
+          )}
+
+          {/* Ingredients */}
+          {ings.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.22em] text-stone-500 font-semibold mb-3">Ingredients</div>
+              <div className="space-y-1.5">
+                {ings.map((ing, idx) => (
+                  <div key={idx} className="flex items-baseline justify-between px-3 py-2 bg-white rounded-lg border border-stone-200/70">
+                    <span className="text-sm text-stone-800 font-medium">{ing.name}</span>
+                    {ing.quantity && <span className="text-xs text-stone-400 ml-2 shrink-0">{ing.quantity}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {ings.length === 0 && (
+            <div className="text-sm text-stone-400 italic text-center py-4">No ingredients added yet.</div>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        <div className="flex items-center justify-between gap-2 p-5 border-t border-stone-200/70 bg-[#F6EFE2]/50">
+          <button
+            onClick={onToggle}
+            className={`flex-1 py-2.5 rounded-full text-sm font-medium transition-colors ${
+              isSelected
+                ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                : "bg-amber-800 text-amber-50 hover:bg-amber-900"
+            }`}
+          >
+            {isSelected ? "✓ added to this week" : "+ add to this week"}
+          </button>
+          <button onClick={onEdit} className="flex items-center gap-1.5 px-4 py-2.5 border border-stone-300 rounded-full text-sm font-medium text-stone-700 hover:bg-stone-50">
+            <Edit3 className="w-4 h-4" />edit
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
