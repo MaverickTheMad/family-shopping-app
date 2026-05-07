@@ -1,4 +1,4 @@
-// Using CommonJS require for pdf-parse compatibility
+"use strict";
 const pdfParse = require("pdf-parse");
 
 // ─── Category detection ───────────────────────────────────────────────────────
@@ -81,21 +81,23 @@ function extractIngredientsFromText(text) {
       inIngredients = true;
       continue;
     }
-    if (inIngredients && /^(instructions?|directions?|method|how to make|preparation|steps?)$/i.test(line)) {
+    if (inIngredients && /^(directions?|instructions?|method|how to make|preparation|steps?)$/i.test(line)) {
       break;
     }
     if (inIngredients) ingredientLines.push(line);
   }
 
+  // If no section header found, try whole doc
   if (ingredientLines.length === 0) ingredientLines = lines;
 
   const ingredients = [];
   for (const line of ingredientLines) {
     if (line.length < 3 || line.length > 120) continue;
-    if (/^(instructions?|directions?|notes?|tips?|step \d|print|save|share|jump to|serves|yield|prep|cook|total time)/i.test(line)) continue;
+    if (/^(directions?|instructions?|notes?|tips?|step \d|print|save|share|jump to|serves|yield|prep|cook|total time|nutrition|per serving|submitted|tested by)/i.test(line)) continue;
 
+    // Match lines starting with a digit or unicode fraction
     const startsWithQuantity = /^[\d¼½¾⅓⅔⅛⅜⅝⅞]/.test(line);
-    const startsWithBullet = /^[-•*·]/.test(line);
+    const startsWithBullet = /^[-•*·]\s/.test(line);
     const cleanLine = line.replace(/^[-•*·]\s*/, "");
 
     if (startsWithQuantity || startsWithBullet) {
@@ -110,18 +112,19 @@ function extractIngredientsFromText(text) {
 
 function extractRecipeName(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  for (const line of lines.slice(0, 10)) {
-    if (line.length > 3 && line.length < 100 && !line.startsWith("http")) {
-      if (/^(print|save|share|jump|by |author|yield|serves|prep|cook|total)/i.test(line)) continue;
+  for (const line of lines.slice(0, 15)) {
+    if (line.length > 3 && line.length < 100 && !line.startsWith("http") && !line.startsWith("Firefox")) {
+      if (/^(print|save|share|jump|by |author|yield|serves|prep|cook|total|submitted|tested|ingredients?)/i.test(line)) continue;
       return line;
     }
   }
   return "";
 }
 
-// ─── Simple multipart parser ──────────────────────────────────────────────────
+// ─── Multipart parser ─────────────────────────────────────────────────────────
 
-function findInBuffer(buffer, search, start = 0) {
+function findInBuffer(buffer, search, start) {
+  start = start || 0;
   for (let i = start; i <= buffer.length - search.length; i++) {
     let found = true;
     for (let j = 0; j < search.length; j++) {
@@ -134,7 +137,7 @@ function findInBuffer(buffer, search, start = 0) {
 
 function parseMultipart(body, boundary) {
   const parts = [];
-  const sep = Buffer.from(`--${boundary}`);
+  const sep = Buffer.from("--" + boundary);
   let start = 0;
 
   while (start < body.length) {
@@ -153,7 +156,7 @@ function parseMultipart(body, boundary) {
     parts.push({
       filename: filenameMatch ? filenameMatch[1] : "",
       contentType: contentTypeMatch ? contentTypeMatch[1].trim() : "",
-      data,
+      data: data,
     });
     start = nextSep === -1 ? body.length : nextSep;
   }
@@ -162,12 +165,11 @@ function parseMultipart(body, boundary) {
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
-export const config = { api: { bodyParser: false } };
+module.exports.config = { api: { bodyParser: false } };
 
-export default async function handler(req, res) {
+module.exports.default = async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  // Read raw body
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const body = Buffer.concat(chunks);
@@ -175,7 +177,7 @@ export default async function handler(req, res) {
   const contentType = req.headers["content-type"] || "";
   const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
   if (!boundaryMatch) {
-    return res.status(400).json({ error: "Invalid request — expected multipart form data" });
+    return res.status(400).json({ error: "Invalid request format" });
   }
 
   const parts = parseMultipart(body, boundaryMatch[1]);
@@ -192,15 +194,15 @@ export default async function handler(req, res) {
     const parsed = await pdfParse(pdfPart.data);
     pdfText = parsed.text || "";
   } catch (e) {
-    return res.status(400).json({ error: "Could not read PDF. Make sure it's a valid text-based PDF." });
+    return res.status(400).json({ error: "Could not read PDF: " + e.message });
   }
 
   if (!pdfText || pdfText.trim().length < 20) {
-    return res.status(400).json({ error: "PDF appears empty or image-only. Use File → Print → Save as PDF from your browser on the recipe page." });
+    return res.status(400).json({ error: "PDF appears empty or image-only. Use File → Print → Save as PDF in your browser on the recipe page." });
   }
 
   const ingredients = extractIngredientsFromText(pdfText);
   const name = extractRecipeName(pdfText);
 
   return res.status(200).json({ name, ingredients });
-}
+};
