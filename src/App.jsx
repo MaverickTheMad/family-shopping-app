@@ -671,14 +671,44 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
     setImporting(true);
     setImportError("");
     try {
-      const formData = new FormData();
-      formData.append("pdf", file);
-      formData.append("url", importUrl.trim());
-      const res = await fetch("/api/import-recipe", { method: "POST", body: formData });
-      if (!res.ok) throw new Error("Server error");
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      applyImportResult(data, data.url || importUrl.trim());
+      // Load pdfjs from CDN — runs entirely in the browser, no server needed
+      if (!window.pdfjsLib) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      }
+
+      // Read file as ArrayBuffer
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+      // Extract text from all pages
+      let fullText = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map((item) => item.str).join(" ");
+        fullText += pageText + "\n";
+      }
+
+      if (!fullText.trim()) {
+        setImportError("PDF appears empty or image-only. Use File → Print → Save as PDF in your browser.");
+        return;
+      }
+
+      // Parse ingredients from extracted text
+      const { name: parsedName, ingredients: parsedIngredients } = parsePdfText(fullText);
+      if (!parsedName && parsedIngredients.length === 0) {
+        setImportError("Couldn't find ingredients. Make sure it's a recipe PDF saved from a browser (not a scan).");
+        return;
+      }
+      applyImportResult({ name: parsedName, ingredients: parsedIngredients }, importUrl.trim());
     } catch (e) {
       setImportError(`PDF import failed: ${e.message}`);
     } finally {
@@ -697,6 +727,72 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
     const updates = {};
     (data.ingredients || []).forEach((i) => { if (i.name && i.section) updates[i.name] = i.section; });
     Object.entries(updates).forEach(([ing, sec]) => onSetSection(ing, sec));
+  }
+
+  function parsePdfText(text) {
+    const UNICODE_FRACTIONS = { "\u00bc":"1/4","\u00bd":"1/2","\u00be":"3/4","\u2153":"1/3","\u2154":"2/3","\u215b":"1/8","\u215c":"3/8","\u215d":"5/8","\u215e":"7/8" };
+    const UNIT_RE = /^(tablespoons?|tbsps?|tbs?|teaspoons?|tsps?|cups?|ounces?|oz\.?|pounds?|lbs?\.?|grams?|g\.?|cloves?|cans?|jars?|bags?|packages?|slices?|pieces?|stalks?|bunches?|sprigs?|pinch(?:es)?|dash(?:es)?|sticks?|fluid ounces?|fl\.? oz\.?|milliliters?|ml\.?|liters?|l\.?|quarts?|qt\.?|pints?|pt\.?)\b/i;
+
+    function parseIngredientLine(raw) {
+      let str = raw.trim();
+      for (const uc of Object.keys(UNICODE_FRACTIONS)) str = str.split(uc).join(" " + UNICODE_FRACTIONS[uc]);
+      str = str.replace(/\s+/g, " ").trim();
+      const qtyMatch = str.match(/^(\d+(?:[\/\-]\d+)?(?:\.\d+)?(?:\s+\d+\/\d+)?)\s*/);
+      let quantity = "", rest = str;
+      if (qtyMatch) {
+        quantity = qtyMatch[1].trim();
+        rest = str.slice(qtyMatch[0].length);
+        const unitMatch = rest.match(UNIT_RE);
+        if (unitMatch) { quantity = quantity + " " + unitMatch[0].trim(); rest = rest.slice(unitMatch[0].length).trim(); }
+      }
+      let ingName = rest.replace(/^,\s*/, "").replace(/\([^)]*\)/g, "").replace(/,.*$/, "").replace(/\s+/g, " ").trim();
+      if (ingName.length > 0) ingName = ingName.charAt(0).toUpperCase() + ingName.slice(1);
+      return { name: ingName, quantity };
+    }
+
+    // pdfjs returns text without newlines between items — split on common patterns
+    // Re-split on ingredient-looking boundaries
+    const normalized = text
+      .replace(/(\d)\s+(cup|tablespoon|teaspoon|pound|ounce|oz|lb|tsp|tbsp|clove|can|jar|bag|slice|bunch|stick)/gi, "\n$1 $2")
+      .replace(/([\u00bc\u00bd\u00be\u2153\u2154\u215b\u215c\u215d\u215e])\s+/g, "\n$1 ");
+
+    const lines = normalized.split(/\n/).map((l) => l.trim()).filter(Boolean);
+
+    // Find ingredient section
+    let inIngredients = false;
+    const ingredientLines = [];
+    for (const line of lines) {
+      if (/^ingredients?$/i.test(line) || /^what you.?ll need$/i.test(line)) { inIngredients = true; continue; }
+      if (inIngredients && /^(directions?|instructions?|method|steps?|step 1|preparation)$/i.test(line)) break;
+      if (inIngredients) ingredientLines.push(line);
+    }
+    const searchLines = ingredientLines.length > 0 ? ingredientLines : lines;
+
+    const ingredients = [];
+    for (const line of searchLines) {
+      if (line.length < 3 || line.length > 150) continue;
+      if (/^(directions?|instructions?|notes?|step \d|serves|yield|prep|cook|total|nutrition|per serving|submitted|tested|gather|preheat|firefox|https?:|calories|carb|protein|fat|sodium)/i.test(line)) continue;
+      const startsWithQty = /^[\d\u00bc\u00bd\u00be\u2153\u2154\u215b\u215c\u215d\u215e]/.test(line);
+      const startsWithBullet = /^[-\u2022*\u00b7]\s/.test(line);
+      if (startsWithQty || startsWithBullet) {
+        const parsed = parseIngredientLine(line.replace(/^[-\u2022*\u00b7]\s*/, ""));
+        if (parsed.name && parsed.name.length > 1 && parsed.name.length < 80) {
+          ingredients.push({ name: parsed.name, quantity: parsed.quantity, section: detectSection(parsed.name) });
+        }
+      }
+    }
+
+    // Extract recipe name — first non-metadata line
+    let recipeName = "";
+    for (const line of lines.slice(0, 20)) {
+      if (line.length > 3 && line.length < 100 && !/^https?:/i.test(line) && !/^firefox/i.test(line) && !/^\d/.test(line)) {
+        if (/^(print|save|share|jump|by |author|yield|serves|prep|cook|total|submitted|tested|ingredients?)/i.test(line)) continue;
+        recipeName = line;
+        break;
+      }
+    }
+
+    return { name: recipeName, ingredients };
   }
 
   function addIngredient() {
