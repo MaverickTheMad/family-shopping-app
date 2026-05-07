@@ -96,7 +96,7 @@ const SEED_EXTRAS = [
   "Cold Foam","Bread","Ham","Salami","Keifer","Chocolate Chips","Toilet Paper","Paper Plates (Small)",
 ];
 
-// ─── DB helpers ───────────────────────────────────────────────────────────────
+// ─── DB helpers ───────────────────────────────────────────────────────────────   
 
 async function seedIfEmpty() {
   const { count } = await supabase.from("recipes").select("*", { count: "exact", head: true });
