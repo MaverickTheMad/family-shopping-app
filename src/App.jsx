@@ -65,6 +65,49 @@ function normIng(i) {
   return { name: i.name || "", quantity: i.quantity || "" };
 }
 
+// Scale a quantity string by a multiplier, preserving the unit
+// e.g. scaleQuantity("1 cup", 2) => "2 cups", scaleQuantity("1/2 cup", 3) => "1 1/2 cups"
+function scaleQuantity(qty, mult) {
+  if (!qty || mult === 1) return qty;
+  // Extract leading number (integer, decimal, or fraction)
+  const match = qty.match(/^(\d+(?:\.\d+)?(?:\/\d+)?(?:\s+\d+\/\d+)?)\s*(.*)/);
+  if (!match) return qty;
+  const numStr = match[1].trim();
+  const unit = match[2].trim();
+
+  // Parse the number (handle fractions like "1/2" or mixed "1 1/2")
+  let num = 0;
+  const parts = numStr.split(/\s+/);
+  for (const part of parts) {
+    if (part.includes("/")) {
+      const [n, d] = part.split("/");
+      num += parseInt(n) / parseInt(d);
+    } else {
+      num += parseFloat(part) || 0;
+    }
+  }
+  const scaled = num * mult;
+
+  // Format nicely: use fractions for common values, otherwise decimal
+  const formatted = formatNumber(scaled);
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function formatNumber(n) {
+  if (Number.isInteger(n)) return String(n);
+  // Common fractions
+  const fracs = [[1/4,"1/4"],[1/3,"1/3"],[1/2,"1/2"],[2/3,"2/3"],[3/4,"3/4"]];
+  const whole = Math.floor(n);
+  const frac = n - whole;
+  for (const [val, str] of fracs) {
+    if (Math.abs(frac - val) < 0.05) {
+      return whole > 0 ? `${whole} ${str}` : str;
+    }
+  }
+  // Fall back to 1 decimal place
+  return parseFloat(n.toFixed(1)).toString();
+}
+
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
 const SEED_RECIPES = [
@@ -96,7 +139,7 @@ const SEED_EXTRAS = [
   "Cold Foam","Bread","Ham","Salami","Keifer","Chocolate Chips","Toilet Paper","Paper Plates (Small)",
 ];
 
-// ─── DB helpers ───────────────────────────────────────────────────────────────   
+// ─── DB helpers ───────────────────────────────────────────────────────────────
 
 async function seedIfEmpty() {
   const { count } = await supabase.from("recipes").select("*", { count: "exact", head: true });
@@ -144,6 +187,7 @@ export default function App() {
   const [extras, setExtras] = useState([]);
   const [sections, setSections] = useState({});
   const [selectedMeals, setSelectedMeals] = useState([]);
+  const [mealMultipliers, setMealMultipliers] = useState({});
   const [pantryItems, setPantryItems] = useState([]);
   const [checkedItems, setCheckedItems] = useState([]);
   const [tab, setTab] = useState("meals");
@@ -173,17 +217,22 @@ export default function App() {
 
   if (recipes === null) return <LoadingScreen />;
 
-  // Aggregate: name -> { count, quantities[] }
+  // Aggregate: name -> { count, quantities[] } — respects per-meal multipliers
   const agg = {};
   selectedMeals.forEach((id) => {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) return;
+    const mult = mealMultipliers[id] || 1;
     (recipe.ingredients || []).forEach((raw) => {
       const { name, quantity } = normIng(raw);
       if (!name) return;
       if (!agg[name]) agg[name] = { count: 0, quantities: [] };
-      agg[name].count += 1;
-      if (quantity) agg[name].quantities.push(quantity);
+      agg[name].count += mult;
+      if (quantity) {
+        // Scale the numeric part of the quantity
+        const scaled = scaleQuantity(quantity, mult);
+        agg[name].quantities.push(scaled);
+      }
     });
   });
 
@@ -214,6 +263,15 @@ export default function App() {
 
   function toggleMeal(id) {
     setSelectedMeals((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+    setMealMultipliers((p) => {
+      if (p[id]) { const next = { ...p }; delete next[id]; return next; }
+      return p;
+    });
+  }
+
+  function setMultiplier(id, val) {
+    const n = Math.max(1, Math.min(10, Number(val) || 1));
+    setMealMultipliers((p) => ({ ...p, [id]: n }));
   }
 
   function togglePantry(name) {
@@ -317,7 +375,9 @@ export default function App() {
             <MealsTab
               recipes={recipes}
               selected={selectedMeals}
+              multipliers={mealMultipliers}
               onToggle={toggleMeal}
+              onSetMultiplier={setMultiplier}
               onEdit={setEditingRecipe}
               onAddRecipe={() => setEditingRecipe({ id: "new", name: "", url: "", category: "Other", notes: "", cook_time: "", servings: "", ingredients: [] })}
             />
@@ -424,7 +484,7 @@ function Header({ onNewTrip }) {
 
 // ─── Meals Tab ────────────────────────────────────────────────────────────────
 
-function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe }) {
+function MealsTab({ recipes, selected, multipliers, onToggle, onSetMultiplier, onEdit, onAddRecipe }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
 
@@ -458,6 +518,7 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe }) {
         {filtered.map((r) => {
           const isSel = selected.includes(r.id);
           const ings = (r.ingredients || []).map(normIng);
+          const mult = multipliers[r.id] || 1;
           return (
             <div key={r.id} className={`group bg-white rounded-xl border transition-all card-shadow ${isSel ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70"}`}>
               <div className="flex items-stretch">
@@ -481,6 +542,13 @@ function MealsTab({ recipes, selected, onToggle, onEdit, onAddRecipe }) {
                   </div>
                 </button>
                 <div className="flex items-center pr-2 gap-1">
+                  {isSel && (
+                    <div className="flex items-center gap-0.5 bg-stone-100 rounded-full px-1.5 py-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => onSetMultiplier(r.id, mult - 1)} disabled={mult <= 1} className="w-5 h-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-white disabled:opacity-30 font-bold text-sm transition-colors">−</button>
+                      <span className="text-xs font-bold text-amber-800 min-w-[22px] text-center">{mult}×</span>
+                      <button onClick={() => onSetMultiplier(r.id, mult + 1)} disabled={mult >= 10} className="w-5 h-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-white disabled:opacity-30 font-bold text-sm transition-colors">+</button>
+                    </div>
+                  )}
                   {r.url && <a href={r.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} className="p-2 text-stone-400 hover:text-amber-800"><ExternalLink className="w-4 h-4" /></a>}
                   <button onClick={() => onEdit(r)} className="p-2 text-stone-400 hover:text-stone-700"><Edit3 className="w-4 h-4" /></button>
                 </div>
