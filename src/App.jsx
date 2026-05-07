@@ -108,6 +108,21 @@ function formatNumber(n) {
   return parseFloat(n.toFixed(1)).toString();
 }
 
+function timeAgo(isoString) {
+  if (!isoString) return null;
+  const diff = Date.now() - new Date(isoString).getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "made today";
+  if (days === 1) return "made yesterday";
+  if (days < 7) return `made ${days} days ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks === 1) return "made 1 week ago";
+  if (weeks < 5) return `made ${weeks} weeks ago`;
+  const months = Math.floor(days / 30);
+  if (months === 1) return "made 1 month ago";
+  return `made ${months} months ago`;
+}
+
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
 const SEED_RECIPES = [
@@ -153,15 +168,21 @@ async function seedIfEmpty() {
 }
 
 async function fetchAll() {
-  const [rr, er, sr, stateR] = await Promise.all([
+  const [rr, er, sr, stateR, histR] = await Promise.all([
     supabase.from("recipes").select("*").order("name"),
     supabase.from("extras").select("*").order("sort_order"),
     supabase.from("sections").select("*"),
     supabase.from("shopping_state").select("*").eq("id", "current").single(),
+    supabase.from("meal_history").select("recipe_id, cooked_at").order("cooked_at", { ascending: false }),
   ]);
   const sections = {};
   (sr.data || []).forEach((r) => { sections[r.ingredient] = r.section; });
   const st = stateR.data || {};
+  // Build map: recipe_id -> most recent cooked_at
+  const lastCooked = {};
+  (histR.data || []).forEach((h) => {
+    if (!lastCooked[h.recipe_id]) lastCooked[h.recipe_id] = h.cooked_at;
+  });
   return {
     recipes: rr.data || [],
     extras: er.data || [],
@@ -169,6 +190,7 @@ async function fetchAll() {
     selectedMeals: st.selected_meals || [],
     pantryItems: st.pantry_items || [],
     checkedItems: st.checked_items || [],
+    lastCooked,
   };
 }
 
@@ -190,6 +212,7 @@ export default function App() {
   const [mealMultipliers, setMealMultipliers] = useState({});
   const [pantryItems, setPantryItems] = useState([]);
   const [checkedItems, setCheckedItems] = useState([]);
+  const [lastCooked, setLastCooked] = useState({});
   const [tab, setTab] = useState("meals");
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [viewingRecipe, setViewingRecipe] = useState(null);
@@ -204,6 +227,7 @@ export default function App() {
       setSelectedMeals(d.selectedMeals);
       setPantryItems(d.pantryItems);
       setCheckedItems(d.checkedItems);
+      setLastCooked(d.lastCooked);
     });
   }, []);
 
@@ -346,10 +370,30 @@ export default function App() {
     showToast("Recipe deleted");
   }
 
+  async function toggleFavorite(id) {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return;
+    const next = !recipe.is_favorite;
+    await supabase.from("recipes").update({ is_favorite: next }).eq("id", id);
+    setRecipes((p) => p.map((r) => r.id === id ? { ...r, is_favorite: next } : r));
+  }
+
   async function startNewTrip() {
     if (!confirm("Start a new trip? Clears selected meals, pantry checks, and shopping check-offs.")) return;
-    setSelectedMeals([]); setPantryItems([]); setCheckedItems([]);
-    // Reset one-time extras only — keep staples active
+    // Log all selected meals as cooked today before resetting
+    if (selectedMeals.length > 0) {
+      const now = new Date().toISOString();
+      await supabase.from("meal_history").insert(
+        selectedMeals.map((id) => ({ recipe_id: id, cooked_at: now }))
+      );
+      const updated = { ...lastCooked };
+      selectedMeals.forEach((id) => { updated[id] = now; });
+      setLastCooked(updated);
+    }
+    setSelectedMeals([]);
+    setMealMultipliers({});
+    setPantryItems([]);
+    setCheckedItems([]);
     await supabase.from("extras").update({ active: false }).eq("is_staple", false);
     setExtras((p) => p.map((e) => e.is_staple ? e : { ...e, active: false }));
     showToast("Fresh trip started");
@@ -379,8 +423,10 @@ export default function App() {
               recipes={recipes}
               selected={selectedMeals}
               multipliers={mealMultipliers}
+              lastCooked={lastCooked}
               onToggle={toggleMeal}
               onSetMultiplier={setMultiplier}
+              onToggleFavorite={toggleFavorite}
               onEdit={setEditingRecipe}
               onAddRecipe={() => setEditingRecipe({ id: "new", name: "", url: "", category: "Other", notes: "", cook_time: "", servings: "", ingredients: [] })}
             />
@@ -389,7 +435,9 @@ export default function App() {
             <RecipesTab
               recipes={recipes}
               selected={selectedMeals}
+              lastCooked={lastCooked}
               onView={setViewingRecipe}
+              onToggleFavorite={toggleFavorite}
               onAddRecipe={() => setEditingRecipe({ id: "new", name: "", url: "", category: "Other", notes: "", cook_time: "", servings: "", ingredients: [] })}
             />
           )}
@@ -439,6 +487,8 @@ export default function App() {
             onToggle={() => toggleMeal(viewingRecipe.id)}
             onEdit={() => { setEditingRecipe(viewingRecipe); setViewingRecipe(null); }}
             onClose={() => setViewingRecipe(null)}
+            onToggleFavorite={toggleFavorite}
+            lastCooked={lastCooked}
           />
         )}
         {toast && (
@@ -487,7 +537,7 @@ function Header({ onNewTrip }) {
 
 // ─── Meals Tab ────────────────────────────────────────────────────────────────
 
-function MealsTab({ recipes, selected, multipliers, onToggle, onSetMultiplier, onEdit, onAddRecipe }) {
+function MealsTab({ recipes, selected, multipliers, lastCooked, onToggle, onSetMultiplier, onToggleFavorite, onEdit, onAddRecipe }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
 
@@ -542,6 +592,9 @@ function MealsTab({ recipes, selected, multipliers, onToggle, onSetMultiplier, o
                     {r.notes && (
                       <div className="text-xs text-stone-400 italic truncate mt-0.5">{r.notes}</div>
                     )}
+                    {lastCooked[r.id] && (
+                      <div className="text-[10px] text-stone-400 mt-0.5">{timeAgo(lastCooked[r.id])}</div>
+                    )}
                   </div>
                 </button>
                 <div className="flex items-center pr-2 gap-1">
@@ -552,6 +605,13 @@ function MealsTab({ recipes, selected, multipliers, onToggle, onSetMultiplier, o
                       <button onClick={() => onSetMultiplier(r.id, mult + 1)} disabled={mult >= 10} className="w-5 h-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-white disabled:opacity-30 font-bold text-sm transition-colors">+</button>
                     </div>
                   )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onToggleFavorite(r.id); }}
+                    className={`p-2 transition-colors ${r.is_favorite ? "text-red-500" : "text-stone-300 hover:text-red-400"}`}
+                    title={r.is_favorite ? "unfavorite" : "favorite"}
+                  >
+                    {r.is_favorite ? "♥" : "♡"}
+                  </button>
                   {r.url && <a href={r.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} className="p-2 text-stone-400 hover:text-amber-800"><ExternalLink className="w-4 h-4" /></a>}
                   <button onClick={() => onEdit(r)} className="p-2 text-stone-400 hover:text-stone-700"><Edit3 className="w-4 h-4" /></button>
                 </div>
@@ -1259,24 +1319,32 @@ function BottomNav({ tab, setTab, counts }) {
 
 // ─── Recipes Tab ──────────────────────────────────────────────────────────────
 
-function RecipesTab({ recipes, selected, onView, onAddRecipe }) {
+function RecipesTab({ recipes, selected, lastCooked, onView, onToggleFavorite, onAddRecipe }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
   const [sortBy, setSortBy] = useState("az");
 
   const filtered = recipes
-    .filter((r) => filterCat === "All" || (r.category || "Other") === filterCat)
+    .filter((r) => {
+      if (filterCat === "Favorites") return r.is_favorite;
+      return filterCat === "All" || (r.category || "Other") === filterCat;
+    })
     .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       if (sortBy === "az") return a.name.localeCompare(b.name);
       if (sortBy === "za") return b.name.localeCompare(a.name);
       if (sortBy === "ingredients") return (b.ingredients?.length || 0) - (a.ingredients?.length || 0);
+      if (sortBy === "recent") {
+        const ta = lastCooked[a.id] ? new Date(lastCooked[a.id]).getTime() : 0;
+        const tb = lastCooked[b.id] ? new Date(lastCooked[b.id]).getTime() : 0;
+        return tb - ta;
+      }
       return 0;
     });
 
   return (
     <section className="pt-4">
-      <SectionHeader eyebrow="recipe hub" title="all recipes" subtitle={`${recipes.length} recipes in your collection`} />
+      <SectionHeader eyebrow="recipe hub" title="all recipes" subtitle={`${recipes.length} recipes · ${recipes.filter((r) => r.is_favorite).length} favorites`} />
 
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1">
@@ -1286,6 +1354,7 @@ function RecipesTab({ recipes, selected, onView, onAddRecipe }) {
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-white border border-stone-200 rounded-full text-xs px-3 py-2.5 text-stone-600 focus:outline-none focus:border-amber-700/50">
           <option value="az">A → Z</option>
           <option value="za">Z → A</option>
+          <option value="recent">Recently made</option>
           <option value="ingredients">Most ingredients</option>
         </select>
         <button onClick={onAddRecipe} className="bg-stone-900 text-amber-50 px-4 py-2.5 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800 shrink-0">
@@ -1294,8 +1363,10 @@ function RecipesTab({ recipes, selected, onView, onAddRecipe }) {
       </div>
 
       <div className="flex gap-1.5 mb-5 overflow-x-auto pb-1 -mx-1 px-1">
-        {["All", ...RECIPE_CATEGORIES].map((c) => (
-          <button key={c} onClick={() => setFilterCat(c)} className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${filterCat === c ? "bg-amber-800 text-amber-50" : "bg-white text-stone-600 border border-stone-200"}`}>{c}</button>
+        {["All", "Favorites", ...RECIPE_CATEGORIES].map((c) => (
+          <button key={c} onClick={() => setFilterCat(c)} className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${filterCat === c ? (c === "Favorites" ? "bg-red-600 text-white" : "bg-amber-800 text-amber-50") : "bg-white text-stone-600 border border-stone-200"}`}>
+            {c === "Favorites" ? "♥ Favorites" : c}
+          </button>
         ))}
       </div>
 
@@ -1306,20 +1377,30 @@ function RecipesTab({ recipes, selected, onView, onAddRecipe }) {
           {filtered.map((r) => {
             const ings = (r.ingredients || []).map(normIng);
             const isSelected = selected.includes(r.id);
+            const ago = timeAgo(lastCooked[r.id]);
             return (
               <button
                 key={r.id}
                 onClick={() => onView(r)}
                 className={`text-left bg-white rounded-2xl border card-shadow p-4 hover:border-amber-700/30 hover:bg-amber-50/20 transition-all ${isSelected ? "border-amber-700/40 bg-amber-50/30" : "border-stone-200/70"}`}
               >
-                {/* Category + selected badge */}
+                {/* Top row: category/selected badge + favorite heart + link */}
                 <div className="flex items-center justify-between mb-2">
                   <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
                     isSelected ? "bg-amber-800 text-amber-50" : "bg-stone-100 text-stone-500"
                   }`}>
                     {isSelected ? "✓ this week" : (r.category || "Other")}
                   </span>
-                  {r.url && <ExternalLink className="w-3.5 h-3.5 text-stone-300" />}
+                  <div className="flex items-center gap-2">
+                    {ago && <span className="text-[10px] text-stone-400">{ago}</span>}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onToggleFavorite(r.id); }}
+                      className={`text-base transition-colors ${r.is_favorite ? "text-red-500" : "text-stone-300 hover:text-red-400"}`}
+                    >
+                      {r.is_favorite ? "♥" : "♡"}
+                    </button>
+                    {r.url && <ExternalLink className="w-3.5 h-3.5 text-stone-300" />}
+                  </div>
                 </div>
 
                 {/* Name */}
@@ -1327,32 +1408,23 @@ function RecipesTab({ recipes, selected, onView, onAddRecipe }) {
 
                 {/* Meta row */}
                 <div className="flex items-center gap-3 text-xs text-stone-400 mb-2">
-                  {r.cook_time && (
-                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{r.cook_time}</span>
-                  )}
-                  {r.servings && (
-                    <span className="flex items-center gap-1"><Users className="w-3 h-3" />{r.servings}</span>
-                  )}
-                  {ings.length > 0 && (
-                    <span>{ings.length} ingredient{ings.length !== 1 ? "s" : ""}</span>
-                  )}
+                  {r.cook_time && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{r.cook_time}</span>}
+                  {r.servings && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{r.servings}</span>}
+                  {ings.length > 0 && <span>{ings.length} ingredient{ings.length !== 1 ? "s" : ""}</span>}
                 </div>
 
                 {/* Notes preview */}
-                {r.notes && (
-                  <div className="text-xs text-stone-400 italic line-clamp-2 mb-2">{r.notes}</div>
-                )}
+                {r.notes && <div className="text-xs text-stone-400 italic line-clamp-2 mb-2">{r.notes}</div>}
 
-                {/* Ingredient preview chips */}
-                {ings.length > 0 && (
+                {/* Ingredient chips */}
+                {ings.length > 0 ? (
                   <div className="flex flex-wrap gap-1 mt-1">
                     {ings.slice(0, 4).map((ing, i) => (
                       <span key={i} className="text-[10px] bg-stone-100 text-stone-500 rounded-full px-2 py-0.5">{ing.name}</span>
                     ))}
                     {ings.length > 4 && <span className="text-[10px] text-stone-400">+{ings.length - 4} more</span>}
                   </div>
-                )}
-                {ings.length === 0 && (
+                ) : (
                   <div className="text-xs text-amber-700/60 italic">no ingredients yet</div>
                 )}
               </button>
@@ -1366,7 +1438,7 @@ function RecipesTab({ recipes, selected, onView, onAddRecipe }) {
 
 // ─── Recipe View (read-only modal) ────────────────────────────────────────────
 
-function RecipeView({ recipe, isSelected, onToggle, onEdit, onClose }) {
+function RecipeView({ recipe, isSelected, onToggle, onEdit, onClose, onToggleFavorite, lastCooked }) {
   const ings = (recipe.ingredients || []).map(normIng);
   const grouped = {};
   ings.forEach((ing) => {
@@ -1390,12 +1462,19 @@ function RecipeView({ recipe, isSelected, onToggle, onEdit, onClose }) {
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleFavorite(recipe.id); }}
+                  className={`text-lg transition-colors ${recipe.is_favorite ? "text-red-500" : "text-stone-300 hover:text-red-400"}`}
+                >
+                  {recipe.is_favorite ? "♥" : "♡"}
+                </button>
               </div>
               <h2 className="font-display text-2xl sm:text-3xl text-stone-900 leading-tight">{recipe.name}</h2>
               <div className="flex items-center gap-4 mt-2 text-sm text-stone-500">
                 {recipe.cook_time && <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />{recipe.cook_time}</span>}
                 {recipe.servings && <span className="flex items-center gap-1.5"><Users className="w-4 h-4" />{recipe.servings} servings</span>}
                 {ings.length > 0 && <span>{ings.length} ingredients</span>}
+                {timeAgo(lastCooked[recipe.id]) && <span className="text-stone-400 text-xs">{timeAgo(lastCooked[recipe.id])}</span>}
               </div>
             </div>
             <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-700 shrink-0"><X className="w-5 h-5" /></button>
