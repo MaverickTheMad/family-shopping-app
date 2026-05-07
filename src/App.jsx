@@ -190,12 +190,13 @@ async function fetchAll() {
     selectedMeals: st.selected_meals || [],
     pantryItems: st.pantry_items || [],
     checkedItems: st.checked_items || [],
+    mealPlan: st.meal_plan || {},
     lastCooked,
   };
 }
 
-async function saveState(sel, pantry, checked) {
-  await supabase.from("shopping_state").upsert({ id: "current", selected_meals: sel, pantry_items: pantry, checked_items: checked });
+async function saveState(sel, pantry, checked, mealPlan) {
+  await supabase.from("shopping_state").upsert({ id: "current", selected_meals: sel, pantry_items: pantry, checked_items: checked, meal_plan: mealPlan || {} });
 }
 
 async function upsertSection(ingredient, section) {
@@ -213,6 +214,7 @@ export default function App() {
   const [pantryItems, setPantryItems] = useState([]);
   const [checkedItems, setCheckedItems] = useState([]);
   const [lastCooked, setLastCooked] = useState({});
+  const [mealPlan, setMealPlan] = useState({}); // { "0": recipeId, "1": recipeId, ... } keyed by day index 0=Sun
   const [tab, setTab] = useState("meals");
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [viewingRecipe, setViewingRecipe] = useState(null);
@@ -228,14 +230,15 @@ export default function App() {
       setPantryItems(d.pantryItems);
       setCheckedItems(d.checkedItems);
       setLastCooked(d.lastCooked);
+      setMealPlan(d.mealPlan);
     });
   }, []);
 
   useEffect(() => {
     if (recipes === null) return;
     if (stateTimer.current) clearTimeout(stateTimer.current);
-    stateTimer.current = setTimeout(() => saveState(selectedMeals, pantryItems, checkedItems), 600);
-  }, [selectedMeals, pantryItems, checkedItems]);
+    stateTimer.current = setTimeout(() => saveState(selectedMeals, pantryItems, checkedItems, mealPlan), 600);
+  }, [selectedMeals, pantryItems, checkedItems, mealPlan]);
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2000); }
 
@@ -378,6 +381,21 @@ export default function App() {
     setRecipes((p) => p.map((r) => r.id === id ? { ...r, is_favorite: next } : r));
   }
 
+  function assignDay(dayIndex, recipeId) {
+    setMealPlan((p) => {
+      const next = { ...p };
+      // If this recipe is already assigned to another day, clear that day
+      Object.keys(next).forEach((k) => { if (next[k] === recipeId) delete next[k]; });
+      if (recipeId) next[String(dayIndex)] = recipeId;
+      else delete next[String(dayIndex)];
+      return next;
+    });
+    // Also add to selected meals if not already there
+    if (recipeId && !selectedMeals.includes(recipeId)) {
+      setSelectedMeals((p) => [...p, recipeId]);
+    }
+  }
+
   async function startNewTrip() {
     if (!confirm("Start a new trip? Clears selected meals, pantry checks, and shopping check-offs.")) return;
     // Log all selected meals as cooked today before resetting
@@ -392,6 +410,7 @@ export default function App() {
     }
     setSelectedMeals([]);
     setMealMultipliers({});
+    setMealPlan({});
     setPantryItems([]);
     setCheckedItems([]);
     await supabase.from("extras").update({ active: false }).eq("is_staple", false);
@@ -424,9 +443,11 @@ export default function App() {
               selected={selectedMeals}
               multipliers={mealMultipliers}
               lastCooked={lastCooked}
+              mealPlan={mealPlan}
               onToggle={toggleMeal}
               onSetMultiplier={setMultiplier}
               onToggleFavorite={toggleFavorite}
+              onAssignDay={assignDay}
               onEdit={setEditingRecipe}
               onAddRecipe={() => setEditingRecipe({ id: "new", name: "", url: "", category: "Other", notes: "", cook_time: "", servings: "", ingredients: [] })}
             />
@@ -537,9 +558,16 @@ function Header({ onNewTrip }) {
 
 // ─── Meals Tab ────────────────────────────────────────────────────────────────
 
-function MealsTab({ recipes, selected, multipliers, lastCooked, onToggle, onSetMultiplier, onToggleFavorite, onEdit, onAddRecipe }) {
+function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onToggle, onSetMultiplier, onToggleFavorite, onAssignDay, onEdit, onAddRecipe }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
+  const [planOpen, setPlanOpen] = useState(true);
+  const [assigningDay, setAssigningDay] = useState(null);
+
+  const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
 
   const filtered = recipes
     .filter((r) => filterCat === "All" || (r.category || "Other") === filterCat)
@@ -552,6 +580,69 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, onToggle, onSetM
 
   return (
     <section className="pt-4">
+      {/* Weekly Planner */}
+      <div className="mb-5">
+        <button onClick={() => setPlanOpen((p) => !p)} className="flex items-center gap-2 w-full text-left mb-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-stone-500 font-semibold flex-1">this week's plan</div>
+          <span className="text-stone-400 text-xs">{planOpen ? "▲" : "▼"}</span>
+        </button>
+        {planOpen && (
+          <div>
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {DAYS.map((day, idx) => {
+                const date = new Date(startOfWeek);
+                date.setDate(startOfWeek.getDate() + idx);
+                const isToday = date.toDateString() === today.toDateString();
+                const assignedId = mealPlan[String(idx)];
+                const assignedRecipe = assignedId ? recipes.find((r) => r.id === assignedId) : null;
+                const isPicking = assigningDay === idx;
+                return (
+                  <button key={idx} onClick={() => setAssigningDay(isPicking ? null : idx)}
+                    className={"rounded-xl p-1.5 text-center transition-all border " + (
+                      isPicking ? "border-amber-700 bg-amber-50 ring-2 ring-amber-700/20"
+                      : isToday ? "border-amber-700/40 bg-amber-50/40"
+                      : assignedRecipe ? "border-stone-300 bg-white"
+                      : "border-stone-200/70 bg-white/60"
+                    )}>
+                    <div className={"text-[9px] font-bold uppercase tracking-wider mb-0.5 " + (isToday ? "text-amber-800" : "text-stone-400")}>{day}</div>
+                    <div className={"text-[9px] font-semibold mb-1 " + (isToday ? "text-amber-800" : "text-stone-500")}>{date.getDate()}</div>
+                    {assignedRecipe ? (
+                      <div className="text-[8px] leading-tight text-stone-700 font-medium min-h-[18px]" style={{display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{assignedRecipe.name}</div>
+                    ) : (
+                      <div className="text-[10px] text-stone-300 min-h-[18px] flex items-center justify-center">+</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {assigningDay !== null && (
+              <div className="bg-white rounded-xl border border-amber-700/30 p-3 mt-1 card-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold text-stone-700">Assign meal to {DAYS[assigningDay]}</div>
+                  {mealPlan[String(assigningDay)] && (
+                    <button onClick={() => { onAssignDay(assigningDay, null); setAssigningDay(null); }} className="text-xs text-red-600 hover:text-red-800 font-medium">clear</button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                  {[...recipes].sort((a, b) => a.name.localeCompare(b.name)).map((r) => {
+                    const isAssigned = mealPlan[String(assigningDay)] === r.id;
+                    return (
+                      <button key={r.id} onClick={() => { onAssignDay(assigningDay, r.id); setAssigningDay(null); }}
+                        className={"text-left px-3 py-2 rounded-lg text-sm transition-colors " + (isAssigned ? "bg-amber-800 text-amber-50" : "hover:bg-stone-50 text-stone-700")}>
+                        {r.name}
+                        {r.category && r.category !== "Other" && (
+                          <span className={"ml-2 text-[10px] uppercase tracking-wider " + (isAssigned ? "text-amber-200" : "text-stone-400")}>{r.category}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <SectionHeader eyebrow="step one" title="this week's meals" subtitle="tap to add to your week. selected meals stay pinned at the top." />
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1">
@@ -564,7 +655,7 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, onToggle, onSetM
       </div>
       <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
         {["All", ...RECIPE_CATEGORIES].map((c) => (
-          <button key={c} onClick={() => setFilterCat(c)} className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${filterCat === c ? "bg-amber-800 text-amber-50" : "bg-white text-stone-600 border border-stone-200"}`}>{c}</button>
+          <button key={c} onClick={() => setFilterCat(c)} className={"px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors " + (filterCat === c ? "bg-amber-800 text-amber-50" : "bg-white text-stone-600 border border-stone-200")}>{c}</button>
         ))}
       </div>
       <div className="grid gap-2">
@@ -572,8 +663,10 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, onToggle, onSetM
           const isSel = selected.includes(r.id);
           const ings = (r.ingredients || []).map(normIng);
           const mult = multipliers[r.id] || 1;
+          const assignedDayIdx = Object.keys(mealPlan).find((k) => mealPlan[k] === r.id);
+          const assignedDay = assignedDayIdx !== undefined ? DAYS[Number(assignedDayIdx)] : null;
           return (
-            <div key={r.id} className={`group bg-white rounded-xl border transition-all card-shadow ${isSel ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70"}`}>
+            <div key={r.id} className={"group bg-white rounded-xl border transition-all card-shadow " + (isSel ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70")}>
               <div className="flex items-stretch">
                 <button onClick={() => onToggle(r.id)} className="flex-1 flex items-center gap-3 p-3 text-left">
                   <Checkbox checked={isSel} />
@@ -581,20 +674,15 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, onToggle, onSetM
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <span className="font-display text-lg leading-tight text-stone-900">{r.name}</span>
                       {r.category && r.category !== "Other" && <span className="text-[10px] uppercase tracking-wider text-stone-500 font-semibold">{r.category}</span>}
+                      {assignedDay && <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-1.5 py-0.5 rounded-full">{assignedDay}</span>}
                     </div>
                     {ings.length > 0 ? (
-                      <div className="text-xs text-stone-500 truncate mt-0.5">
-                        {ings.slice(0, 4).map((i) => i.name).join(" · ")}{ings.length > 4 && ` +${ings.length - 4}`}
-                      </div>
+                      <div className="text-xs text-stone-500 truncate mt-0.5">{ings.slice(0, 4).map((i) => i.name).join(" · ")}{ings.length > 4 && " +" + (ings.length - 4)}</div>
                     ) : (
                       <div className="text-xs text-amber-700/70 italic mt-0.5">no ingredients yet</div>
                     )}
-                    {r.notes && (
-                      <div className="text-xs text-stone-400 italic truncate mt-0.5">{r.notes}</div>
-                    )}
-                    {lastCooked[r.id] && (
-                      <div className="text-[10px] text-stone-400 mt-0.5">{timeAgo(lastCooked[r.id])}</div>
-                    )}
+                    {r.notes && <div className="text-xs text-stone-400 italic truncate mt-0.5">{r.notes}</div>}
+                    {lastCooked[r.id] && <div className="text-[10px] text-stone-400 mt-0.5">{timeAgo(lastCooked[r.id])}</div>}
                   </div>
                 </button>
                 <div className="flex items-center pr-2 gap-1">
@@ -605,11 +693,7 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, onToggle, onSetM
                       <button onClick={() => onSetMultiplier(r.id, mult + 1)} disabled={mult >= 10} className="w-5 h-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-white disabled:opacity-30 font-bold text-sm transition-colors">+</button>
                     </div>
                   )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onToggleFavorite(r.id); }}
-                    className={`p-2 transition-colors ${r.is_favorite ? "text-red-500" : "text-stone-300 hover:text-red-400"}`}
-                    title={r.is_favorite ? "unfavorite" : "favorite"}
-                  >
+                  <button onClick={(e) => { e.stopPropagation(); onToggleFavorite(r.id); }} className={"p-2 transition-colors " + (r.is_favorite ? "text-red-500" : "text-stone-300 hover:text-red-400")}>
                     {r.is_favorite ? "♥" : "♡"}
                   </button>
                   {r.url && <a href={r.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} className="p-2 text-stone-400 hover:text-amber-800"><ExternalLink className="w-4 h-4" /></a>}
