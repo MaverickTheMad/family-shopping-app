@@ -108,7 +108,39 @@ function formatNumber(n) {
   return parseFloat(n.toFixed(1)).toString();
 }
 
-function timeAgo(isoString) {
+// Subtract haveQty from neededQty — returns remainder or null if fully covered
+// e.g. subtractQuantity("4 cups", "2 cups") => "2 cups"
+function subtractQuantity(needed, have) {
+  if (!needed || !have) return needed;
+
+  function parseQty(str) {
+    if (!str) return null;
+    const fracs = { "1/4": 0.25, "1/3": 0.333, "1/2": 0.5, "2/3": 0.667, "3/4": 0.75 };
+    str = str.trim();
+    // Replace unicode fractions
+    const unicodeFracs = { "\u00bc": "1/4", "\u00bd": "1/2", "\u00be": "3/4", "\u2153": "1/3", "\u2154": "2/3" };
+    for (const [uc, rep] of Object.entries(unicodeFracs)) str = str.split(uc).join(rep);
+    const m = str.match(/^(\d+(?:\.\d+)?(?:\/\d+)?(?:\s+\d+\/\d+)?)\s*(.*)/);
+    if (!m) return null;
+    let num = 0;
+    const parts = m[1].trim().split(/\s+/);
+    for (const part of parts) {
+      if (part.includes("/")) { const [n, d] = part.split("/"); num += parseInt(n) / parseInt(d); }
+      else if (fracs[part]) num += fracs[part];
+      else num += parseFloat(part) || 0;
+    }
+    return { num, unit: m[2].trim().toLowerCase() };
+  }
+
+  const n = parseQty(needed);
+  const h = parseQty(have);
+  if (!n || !h) return needed;
+  // Only subtract if units match (or both have no unit)
+  if (n.unit !== h.unit) return needed;
+  const remainder = n.num - h.num;
+  if (remainder <= 0) return null; // fully covered
+  return formatNumber(remainder) + (n.unit ? " " + n.unit : "");
+}
   if (!isoString) return null;
   const diff = Date.now() - new Date(isoString).getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -330,17 +362,34 @@ export default function App() {
     });
   });
 
+  // Normalize pantryItems — supports both legacy string[] and new {name, haveQty}[]
+  const pantryMap = {}; // name -> haveQty (or "" if fully have it)
+  pantryItems.forEach((p) => {
+    if (typeof p === "string") pantryMap[p] = "";
+    else pantryMap[p.name] = p.haveQty || "";
+  });
+
   const allIngredients = Object.keys(agg).sort();
 
   const shoppingGroups = (() => {
     const map = {};
     Object.entries(agg).forEach(([name, info]) => {
-      if (pantryItems.includes(name)) return;
+      if (name in pantryMap) {
+        const haveQty = pantryMap[name];
+        // If no partial quantity specified, skip entirely
+        if (!haveQty) return;
+        // If partial quantity: subtract what they have and show remainder
+        const neededQtys = info.quantities.map((q) => subtractQuantity(q, haveQty)).filter(Boolean);
+        if (neededQtys.length === 0) return; // fully covered
+        const sec = getSection(name, sections);
+        if (!map[sec]) map[sec] = [];
+        map[sec].push({ name, count: info.count, quantities: neededQtys, partial: true });
+        return;
+      }
       const sec = getSection(name, sections);
       if (!map[sec]) map[sec] = [];
       map[sec].push({ name, count: info.count, quantities: info.quantities });
     });
-    // Active one-time extras + all staples always appear
     extras.filter((e) => e.active || e.is_staple).forEach((e) => {
       const sec = getSection(e.name, sections);
       if (!map[sec]) map[sec] = [];
@@ -353,7 +402,7 @@ export default function App() {
       .map((sec) => ({ section: sec, items: map[sec].sort((a, b) => a.name.localeCompare(b.name)) }));
   })();
 
-  const pantrySkipCount = pantryItems.filter((p) => agg[p]).length;
+  const pantrySkipCount = Object.keys(pantryMap).filter((p) => agg[p]).length;
   const totalItems = shoppingGroups.reduce((s, g) => s + g.items.length, 0);
 
   function toggleMeal(id) {
@@ -369,8 +418,22 @@ export default function App() {
     setMealMultipliers((p) => ({ ...p, [id]: n }));
   }
 
-  function togglePantry(name) {
-    setPantryItems((p) => p.includes(name) ? p.filter((x) => x !== name) : [...p, name]);
+  function togglePantry(name, haveQty) {
+    setPantryItems((prev) => {
+      const exists = prev.find((p) => (typeof p === "string" ? p : p.name) === name);
+      if (exists) return prev.filter((p) => (typeof p === "string" ? p : p.name) !== name);
+      return [...prev, { name, haveQty: haveQty || "" }];
+    });
+  }
+
+  function setPantryQty(name, haveQty) {
+    setPantryItems((prev) =>
+      prev.map((p) => {
+        const n = typeof p === "string" ? p : p.name;
+        if (n !== name) return p;
+        return { name, haveQty };
+      })
+    );
   }
 
   async function toggleExtra(id) {
@@ -533,8 +596,9 @@ export default function App() {
             <PantryTab
               ingredients={allIngredients}
               agg={agg}
-              pantryItems={pantryItems}
+              pantryMap={pantryMap}
               onToggle={togglePantry}
+              onSetQty={setPantryQty}
               skipCount={pantrySkipCount}
               sections={sections}
             />
@@ -778,7 +842,32 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
 
 // ─── Pantry Tab ───────────────────────────────────────────────────────────────
 
-function PantryTab({ ingredients, agg, pantryItems, onToggle, skipCount, sections }) {
+function PantryTab({ ingredients, agg, pantryMap, onToggle, onSetQty, skipCount, sections }) {
+  const [qtyPopup, setQtyPopup] = useState(null); // { name, needed, haveQty }
+  const [qtyInput, setQtyInput] = useState("");
+
+  function handleIngredientTap(name, neededQty) {
+    const alreadyHave = name in pantryMap;
+    if (alreadyHave) {
+      // Tap again to remove
+      onToggle(name);
+      return;
+    }
+    // Open quantity popup
+    setQtyPopup({ name, needed: neededQty });
+    setQtyInput("");
+  }
+
+  function handleHaveAll(name) {
+    onToggle(name, "");
+    setQtyPopup(null);
+  }
+
+  function handleHavePartial(name) {
+    onToggle(name, qtyInput.trim());
+    setQtyPopup(null);
+  }
+
   if (ingredients.length === 0) {
     return (
       <section className="pt-4">
@@ -804,15 +893,28 @@ function PantryTab({ ingredients, agg, pantryItems, onToggle, skipCount, section
             <SectionLabel name={sec} />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
               {grouped[sec].sort().map((name) => {
-                const have = pantryItems.includes(name);
+                const have = name in pantryMap;
+                const haveQty = pantryMap[name];
                 const info = agg[name];
-                const qty = info?.quantities?.[0] || "";
+                const neededQty = info?.quantities?.[0] || "";
+                const isPartial = have && haveQty;
                 return (
-                  <button key={name} onClick={() => onToggle(name)} className={`flex items-center gap-3 px-3 py-2.5 bg-white rounded-lg border text-left transition-all card-shadow ${have ? "border-emerald-700/30 bg-emerald-50/40" : "border-stone-200/70"}`}>
-                    <Checkbox checked={have} green />
+                  <button
+                    key={name}
+                    onClick={() => handleIngredientTap(name, neededQty)}
+                    className={`flex items-center gap-3 px-3 py-2.5 bg-white rounded-lg border text-left transition-all card-shadow ${
+                      isPartial ? "border-amber-600/40 bg-amber-50/30" :
+                      have ? "border-emerald-700/30 bg-emerald-50/40" : "border-stone-200/70"
+                    }`}
+                  >
+                    <Checkbox checked={have} green={!isPartial} amber={isPartial} />
                     <div className="flex-1 min-w-0">
                       <div className={`text-sm ${have ? "text-stone-400 strike" : "text-stone-800"}`}>{name}</div>
-                      {qty && <div className="text-[11px] text-stone-400 mt-0.5">{qty}</div>}
+                      {have && haveQty ? (
+                        <div className="text-[11px] text-amber-700 mt-0.5">have {haveQty} · need {subtractQuantity(neededQty, haveQty) || "none"}</div>
+                      ) : neededQty && !have ? (
+                        <div className="text-[11px] text-stone-400 mt-0.5">{neededQty}</div>
+                      ) : null}
                     </div>
                     {info?.count > 1 && <span className="text-[10px] font-semibold text-amber-800/80 bg-amber-100/60 rounded-full px-2 py-0.5 shrink-0">×{info.count}</span>}
                   </button>
@@ -822,6 +924,50 @@ function PantryTab({ ingredients, agg, pantryItems, onToggle, skipCount, section
           </div>
         ))}
       </div>
+
+      {/* Quantity popup */}
+      {qtyPopup && (
+        <div className="fixed inset-0 bg-stone-900/40 z-40 flex items-end sm:items-center justify-center p-4" onClick={() => setQtyPopup(null)}>
+          <div className="bg-[#FBF6EC] rounded-2xl w-full max-w-sm p-5 card-shadow" onClick={(e) => e.stopPropagation()}>
+            <div className="font-display text-xl mb-1">{qtyPopup.name}</div>
+            {qtyPopup.needed && (
+              <div className="text-xs text-stone-500 mb-4">needed: <span className="font-semibold text-stone-700">{qtyPopup.needed}</span></div>
+            )}
+            <div className="text-sm font-medium text-stone-700 mb-3">How much do you have?</div>
+
+            {/* Partial quantity input */}
+            <div className="flex gap-2 mb-4">
+              <input
+                value={qtyInput}
+                onChange={(e) => setQtyInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && qtyInput.trim() && handleHavePartial(qtyPopup.name)}
+                placeholder={`e.g. ${qtyPopup.needed ? "half of " + qtyPopup.needed : "1 cup"}`}
+                autoFocus
+                className="flex-1 px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10"
+              />
+              <button
+                onClick={() => qtyInput.trim() && handleHavePartial(qtyPopup.name)}
+                disabled={!qtyInput.trim()}
+                className="bg-amber-800 text-amber-50 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-900 disabled:opacity-40"
+              >
+                partial
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleHaveAll(qtyPopup.name)}
+                className="flex-1 bg-emerald-700 text-white py-2.5 rounded-full text-sm font-medium hover:bg-emerald-800"
+              >
+                ✓ I have all of it
+              </button>
+              <button onClick={() => setQtyPopup(null)} className="px-4 py-2.5 text-stone-500 text-sm font-medium hover:text-stone-700">
+                cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1396,9 +1542,15 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
 
 // ─── Shared components ────────────────────────────────────────────────────────
 
-function Checkbox({ checked, green }) {
+function Checkbox({ checked, green, amber: amberProp }) {
   return (
-    <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? (green ? "bg-emerald-700 border-emerald-700" : "bg-amber-800 border-amber-800") : "bg-white border-stone-300"}`}>
+    <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+      checked
+        ? amberProp ? "bg-amber-600 border-amber-600"
+        : green ? "bg-emerald-700 border-emerald-700"
+        : "bg-amber-800 border-amber-800"
+        : "bg-white border-stone-300"
+    }`}>
       {checked && <Check className="w-3 h-3 text-amber-50" strokeWidth={3.5} />}
     </span>
   );
