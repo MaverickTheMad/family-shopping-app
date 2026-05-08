@@ -692,70 +692,95 @@ function Header({ onNewTrip }) {
 // ─── Meals Tab ────────────────────────────────────────────────────────────────
 
 function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onToggle, onSetMultiplier, onToggleFavorite, onAssignDay, onEdit, onAddRecipe }) {
-  const [assigningDay, setAssigningDay] = useState(null);
+  const [assigningDay, setAssigningDay] = useState(null); // absolute day offset from start of week
   const [search, setSearch] = useState("");
+  const [weekOffset, setWeekOffset] = useState(0); // 0=this week, 1=next week, 2=week after
 
   const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const today = new Date();
   const startOfWeek = new Date(today);
   startOfWeek.setDate(today.getDate() - today.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
 
-  // Meals that are selected but not yet assigned to a day
-  const unplanned = selected.filter((id) => !Object.values(mealPlan).includes(id));
+  // 3 weeks = days 0-20
+  const WEEKS = [0, 1, 2];
 
   const filteredForPicker = [...recipes]
     .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Meals selected but not assigned to any day
+  const assignedIds = new Set(Object.values(mealPlan).filter(Boolean));
+  const unplanned = selected.filter((id) => !assignedIds.has(id));
+
+  function getDate(dayOffset) {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + dayOffset);
+    return d;
+  }
+
+  function weekLabel(w) {
+    if (w === 0) return "This Week";
+    if (w === 1) return "Next Week";
+    return "Week of " + getDate(w * 7).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
   return (
     <section className="pt-4">
-      <SectionHeader eyebrow="step one" title="this week's plan" subtitle="tap a day to assign a meal. use the recipes tab to browse your full collection." />
+      <SectionHeader eyebrow="step one" title="this week's plan" subtitle="tap a day to assign a meal. use the recipes tab to browse your collection." />
 
-      {/* 7-day calendar grid */}
-      <div className="grid grid-cols-7 gap-1.5 mb-5">
-        {DAYS.map((day, idx) => {
-          const date = new Date(startOfWeek);
-          date.setDate(startOfWeek.getDate() + idx);
+      {/* Week tabs */}
+      <div className="flex gap-1.5 mb-3">
+        {WEEKS.map((w) => (
+          <button key={w} onClick={() => { setWeekOffset(w); setAssigningDay(null); }}
+            className={"flex-1 py-2 rounded-full text-xs font-medium transition-colors " + (weekOffset === w ? "bg-amber-800 text-amber-50" : "bg-white text-stone-600 border border-stone-200 hover:border-stone-300")}>
+            {weekLabel(w)}
+          </button>
+        ))}
+      </div>
+
+      {/* 7-day calendar for selected week */}
+      <div className="grid grid-cols-7 gap-1 mb-4">
+        {DAYS.map((day, i) => {
+          const dayOffset = weekOffset * 7 + i;
+          const date = getDate(dayOffset);
           const isToday = date.toDateString() === today.toDateString();
-          const assignedId = mealPlan[String(idx)];
+          const isPast = date < new Date(today.setHours(0,0,0,0)) && !isToday;
+          const assignedId = mealPlan[String(dayOffset)];
           const assignedRecipe = assignedId ? recipes.find((r) => r.id === assignedId) : null;
-          const isPicking = assigningDay === idx;
+          const isPicking = assigningDay === dayOffset;
 
           return (
-            <button
-              key={idx}
-              onClick={() => setAssigningDay(isPicking ? null : idx)}
-              className={"flex flex-col rounded-2xl p-2 text-center transition-all border card-shadow " + (
+            <button key={dayOffset} onClick={() => setAssigningDay(isPicking ? null : dayOffset)}
+              className={"flex flex-col rounded-2xl p-1.5 text-center transition-all border min-h-[80px] " + (
                 isPicking ? "border-amber-700 bg-amber-50 ring-2 ring-amber-700/20"
-                : isToday ? "border-amber-700/40 bg-amber-50/30"
-                : assignedRecipe ? "border-stone-300 bg-white"
-                : "border-stone-200/60 bg-white/50"
-              )}
-            >
-              <div className={"text-[10px] font-bold uppercase tracking-wider " + (isToday ? "text-amber-800" : "text-stone-400")}>{day}</div>
-              <div className={"text-sm font-semibold mb-1 " + (isToday ? "text-amber-800" : "text-stone-600")}>{date.getDate()}</div>
+                : isToday ? "border-amber-700/50 bg-amber-50/40"
+                : assignedRecipe ? "border-stone-300 bg-white card-shadow"
+                : isPast ? "border-stone-100 bg-stone-50/50 opacity-60"
+                : "border-stone-200/60 bg-white/60"
+              )}>
+              <div className={"text-[9px] font-bold uppercase tracking-wider " + (isToday ? "text-amber-800" : "text-stone-400")}>{day}</div>
+              <div className={"text-sm font-semibold mb-1 " + (isToday ? "text-amber-800 font-bold" : "text-stone-600")}>{date.getDate()}</div>
               {assignedRecipe ? (
-                <div className="text-[9px] leading-tight text-stone-700 font-medium flex-1 flex items-start" style={{display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden",textAlign:"left"}}>{assignedRecipe.name}</div>
+                <div className="text-[8px] leading-tight text-stone-700 font-medium flex-1 text-left" style={{display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{assignedRecipe.name}</div>
               ) : (
-                <div className="text-stone-300 text-base flex-1 flex items-center justify-center">+</div>
+                <div className="text-stone-300 flex-1 flex items-center justify-center text-base">+</div>
               )}
             </button>
           );
         })}
       </div>
 
-      {/* Meal picker dropdown */}
+      {/* Meal picker */}
       {assigningDay !== null && (
-        <div className="bg-white rounded-2xl border border-amber-700/30 p-4 mb-5 card-shadow">
+        <div className="bg-white rounded-2xl border border-amber-700/30 p-4 mb-4 card-shadow">
           <div className="flex items-center justify-between mb-3">
             <div className="font-display text-lg text-stone-800">
-              {DAYS[assigningDay]}, {new Date(startOfWeek.getTime() + assigningDay * 86400000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              {DAYS[assigningDay % 7]}, {getDate(assigningDay).toLocaleDateString("en-US", { month: "long", day: "numeric" })}
             </div>
             <div className="flex items-center gap-2">
               {mealPlan[String(assigningDay)] && (
-                <button onClick={() => { onAssignDay(assigningDay, null); setAssigningDay(null); }} className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded-full border border-red-200 hover:bg-red-50">
-                  clear
-                </button>
+                <button onClick={() => { onAssignDay(assigningDay, null); setAssigningDay(null); }} className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded-full border border-red-200 hover:bg-red-50">clear</button>
               )}
               <button onClick={() => setAssigningDay(null)} className="text-stone-400 hover:text-stone-600 p-1"><X className="w-4 h-4" /></button>
             </div>
@@ -768,6 +793,9 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
             {filteredForPicker.map((r) => {
               const isAssigned = mealPlan[String(assigningDay)] === r.id;
               const isSel = selected.includes(r.id);
+              // Find if this recipe is assigned elsewhere
+              const assignedElsewhere = Object.entries(mealPlan).find(([k, v]) => v === r.id && Number(k) !== assigningDay);
+              const elsewhereDay = assignedElsewhere ? getDate(Number(assignedElsewhere[0])).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : null;
               return (
                 <button key={r.id} onClick={() => { onAssignDay(assigningDay, r.id); setAssigningDay(null); setSearch(""); }}
                   className={"text-left px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-2 " + (isAssigned ? "bg-amber-800 text-amber-50" : "hover:bg-stone-50 text-stone-700")}>
@@ -775,7 +803,8 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
                   {r.category && r.category !== "Other" && (
                     <span className={"text-[10px] uppercase tracking-wider shrink-0 " + (isAssigned ? "text-amber-200" : "text-stone-400")}>{r.category}</span>
                   )}
-                  {isSel && !isAssigned && <span className="text-[9px] text-emerald-600 font-semibold shrink-0">✓ added</span>}
+                  {elsewhereDay && !isAssigned && <span className="text-[9px] text-stone-400 shrink-0">{elsewhereDay}</span>}
+                  {isSel && !isAssigned && !elsewhereDay && <span className="text-[9px] text-emerald-600 font-semibold shrink-0">✓</span>}
                 </button>
               );
             })}
@@ -783,7 +812,7 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
         </div>
       )}
 
-      {/* Selected meals not yet assigned to a day */}
+      {/* Unplanned selected meals */}
       {unplanned.length > 0 && (
         <div className="mb-4">
           <SectionLabel name="also this week" count={unplanned.length} />
@@ -824,12 +853,10 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
         </div>
       )}
 
-      {/* Empty state */}
       {Object.keys(mealPlan).length === 0 && selected.length === 0 && (
         <EmptyState icon={<ChefHat className="w-8 h-8" />} message="tap a day above to plan your meals, or browse the recipes tab." />
       )}
 
-      {/* Quick add button */}
       <div className="flex justify-center pt-2">
         <button onClick={onAddRecipe} className="flex items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-amber-800 px-4 py-2 rounded-full border border-stone-200 hover:border-amber-700/40 transition-colors">
           <Plus className="w-3.5 h-3.5" />add new recipe
