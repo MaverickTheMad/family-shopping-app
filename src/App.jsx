@@ -472,7 +472,7 @@ export default function App() {
   }
 
   async function saveRecipe(recipe) {
-    const payload = { name: recipe.name, url: recipe.url || null, category: recipe.category, notes: recipe.notes || "", cook_time: recipe.cook_time || "", servings: recipe.servings || "", ingredients: recipe.ingredients };
+    const payload = { name: recipe.name, url: recipe.url || null, category: recipe.category, notes: recipe.notes || "", cook_time: recipe.cook_time || "", servings: recipe.servings || "", pdf_url: recipe.pdf_url || "", ingredients: recipe.ingredients };
     const newSections = { ...sections };
     const toUpsert = [];
     recipe.ingredients.forEach((raw) => {
@@ -692,151 +692,148 @@ function Header({ onNewTrip }) {
 // ─── Meals Tab ────────────────────────────────────────────────────────────────
 
 function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onToggle, onSetMultiplier, onToggleFavorite, onAssignDay, onEdit, onAddRecipe }) {
-  const [search, setSearch] = useState("");
-  const [filterCat, setFilterCat] = useState("All");
-  const [planOpen, setPlanOpen] = useState(true);
   const [assigningDay, setAssigningDay] = useState(null);
+  const [search, setSearch] = useState("");
 
   const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const today = new Date();
   const startOfWeek = new Date(today);
   startOfWeek.setDate(today.getDate() - today.getDay());
 
-  const filtered = recipes
-    .filter((r) => filterCat === "All" || (r.category || "Other") === filterCat)
+  // Meals that are selected but not yet assigned to a day
+  const unplanned = selected.filter((id) => !Object.values(mealPlan).includes(id));
+
+  const filteredForPicker = [...recipes]
     .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => {
-      const as = selected.includes(a.id), bs = selected.includes(b.id);
-      if (as !== bs) return as ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <section className="pt-4">
-      {/* Weekly Planner */}
-      <div className="mb-5">
-        <button onClick={() => setPlanOpen((p) => !p)} className="flex items-center gap-2 w-full text-left mb-3">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-stone-500 font-semibold flex-1">this week's plan</div>
-          <span className="text-stone-400 text-xs">{planOpen ? "▲" : "▼"}</span>
-        </button>
-        {planOpen && (
-          <div>
-            <div className="grid grid-cols-7 gap-1 mb-2">
-              {DAYS.map((day, idx) => {
-                const date = new Date(startOfWeek);
-                date.setDate(startOfWeek.getDate() + idx);
-                const isToday = date.toDateString() === today.toDateString();
-                const assignedId = mealPlan[String(idx)];
-                const assignedRecipe = assignedId ? recipes.find((r) => r.id === assignedId) : null;
-                const isPicking = assigningDay === idx;
-                return (
-                  <button key={idx} onClick={() => setAssigningDay(isPicking ? null : idx)}
-                    className={"rounded-xl p-1.5 text-center transition-all border " + (
-                      isPicking ? "border-amber-700 bg-amber-50 ring-2 ring-amber-700/20"
-                      : isToday ? "border-amber-700/40 bg-amber-50/40"
-                      : assignedRecipe ? "border-stone-300 bg-white"
-                      : "border-stone-200/70 bg-white/60"
-                    )}>
-                    <div className={"text-[9px] font-bold uppercase tracking-wider mb-0.5 " + (isToday ? "text-amber-800" : "text-stone-400")}>{day}</div>
-                    <div className={"text-[9px] font-semibold mb-1 " + (isToday ? "text-amber-800" : "text-stone-500")}>{date.getDate()}</div>
-                    {assignedRecipe ? (
-                      <div className="text-[8px] leading-tight text-stone-700 font-medium min-h-[18px]" style={{display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{assignedRecipe.name}</div>
-                    ) : (
-                      <div className="text-[10px] text-stone-300 min-h-[18px] flex items-center justify-center">+</div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            {assigningDay !== null && (
-              <div className="bg-white rounded-xl border border-amber-700/30 p-3 mt-1 card-shadow">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs font-semibold text-stone-700">Assign meal to {DAYS[assigningDay]}</div>
-                  {mealPlan[String(assigningDay)] && (
-                    <button onClick={() => { onAssignDay(assigningDay, null); setAssigningDay(null); }} className="text-xs text-red-600 hover:text-red-800 font-medium">clear</button>
-                  )}
-                </div>
-                <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
-                  {[...recipes].sort((a, b) => a.name.localeCompare(b.name)).map((r) => {
-                    const isAssigned = mealPlan[String(assigningDay)] === r.id;
-                    return (
-                      <button key={r.id} onClick={() => { onAssignDay(assigningDay, r.id); setAssigningDay(null); }}
-                        className={"text-left px-3 py-2 rounded-lg text-sm transition-colors " + (isAssigned ? "bg-amber-800 text-amber-50" : "hover:bg-stone-50 text-stone-700")}>
-                        {r.name}
-                        {r.category && r.category !== "Other" && (
-                          <span className={"ml-2 text-[10px] uppercase tracking-wider " + (isAssigned ? "text-amber-200" : "text-stone-400")}>{r.category}</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <SectionHeader eyebrow="step one" title="this week's plan" subtitle="tap a day to assign a meal. use the recipes tab to browse your full collection." />
 
-      <SectionHeader eyebrow="step one" title="this week's meals" subtitle="tap to add to your week. selected meals stay pinned at the top." />
-      <div className="flex gap-2 mb-4">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search recipes" className="w-full pl-9 pr-3 py-2.5 bg-white border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10" />
-        </div>
-        <button onClick={onAddRecipe} className="bg-stone-900 text-amber-50 px-4 py-2.5 rounded-full text-sm font-medium flex items-center gap-1.5 hover:bg-stone-800">
-          <Plus className="w-4 h-4" />new
-        </button>
-      </div>
-      <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1 -mx-1 px-1">
-        {["All", ...RECIPE_CATEGORIES].map((c) => (
-          <button key={c} onClick={() => setFilterCat(c)} className={"px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors " + (filterCat === c ? "bg-amber-800 text-amber-50" : "bg-white text-stone-600 border border-stone-200")}>{c}</button>
-        ))}
-      </div>
-      <div className="grid gap-2">
-        {filtered.map((r) => {
-          const isSel = selected.includes(r.id);
-          const ings = (r.ingredients || []).map(normIng);
-          const mult = multipliers[r.id] || 1;
-          const assignedDayIdx = Object.keys(mealPlan).find((k) => mealPlan[k] === r.id);
-          const assignedDay = assignedDayIdx !== undefined ? DAYS[Number(assignedDayIdx)] : null;
+      {/* 7-day calendar grid */}
+      <div className="grid grid-cols-7 gap-1.5 mb-5">
+        {DAYS.map((day, idx) => {
+          const date = new Date(startOfWeek);
+          date.setDate(startOfWeek.getDate() + idx);
+          const isToday = date.toDateString() === today.toDateString();
+          const assignedId = mealPlan[String(idx)];
+          const assignedRecipe = assignedId ? recipes.find((r) => r.id === assignedId) : null;
+          const isPicking = assigningDay === idx;
+
           return (
-            <div key={r.id} className={"group bg-white rounded-xl border transition-all card-shadow " + (isSel ? "border-amber-700/40 bg-amber-50/40" : "border-stone-200/70")}>
-              <div className="flex items-stretch">
-                <button onClick={() => onToggle(r.id)} className="flex-1 flex items-center gap-3 p-3 text-left">
-                  <Checkbox checked={isSel} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="font-display text-lg leading-tight text-stone-900">{r.name}</span>
-                      {r.category && r.category !== "Other" && <span className="text-[10px] uppercase tracking-wider text-stone-500 font-semibold">{r.category}</span>}
-                      {assignedDay && <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-1.5 py-0.5 rounded-full">{assignedDay}</span>}
-                    </div>
-                    {ings.length > 0 ? (
-                      <div className="text-xs text-stone-500 truncate mt-0.5">{ings.slice(0, 4).map((i) => i.name).join(" · ")}{ings.length > 4 && " +" + (ings.length - 4)}</div>
-                    ) : (
-                      <div className="text-xs text-amber-700/70 italic mt-0.5">no ingredients yet</div>
-                    )}
-                    {r.notes && <div className="text-xs text-stone-400 italic truncate mt-0.5">{r.notes}</div>}
-                    {lastCooked[r.id] && <div className="text-[10px] text-stone-400 mt-0.5">{timeAgo(lastCooked[r.id])}</div>}
-                  </div>
-                </button>
-                <div className="flex items-center pr-2 gap-1">
-                  {isSel && (
-                    <div className="flex items-center gap-0.5 bg-stone-100 rounded-full px-1.5 py-1 mr-1" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => onSetMultiplier(r.id, mult - 1)} disabled={mult <= 1} className="w-5 h-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-white disabled:opacity-30 font-bold text-sm transition-colors">−</button>
-                      <span className="text-xs font-bold text-amber-800 min-w-[22px] text-center">{mult}×</span>
-                      <button onClick={() => onSetMultiplier(r.id, mult + 1)} disabled={mult >= 10} className="w-5 h-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-white disabled:opacity-30 font-bold text-sm transition-colors">+</button>
-                    </div>
-                  )}
-                  <button onClick={(e) => { e.stopPropagation(); onToggleFavorite(r.id); }} className={"p-2 transition-colors " + (r.is_favorite ? "text-red-500" : "text-stone-300 hover:text-red-400")}>
-                    {r.is_favorite ? "♥" : "♡"}
-                  </button>
-                  {r.url && <a href={r.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} className="p-2 text-stone-400 hover:text-amber-800"><ExternalLink className="w-4 h-4" /></a>}
-                  <button onClick={() => onEdit(r)} className="p-2 text-stone-400 hover:text-stone-700"><Edit3 className="w-4 h-4" /></button>
-                </div>
-              </div>
-            </div>
+            <button
+              key={idx}
+              onClick={() => setAssigningDay(isPicking ? null : idx)}
+              className={"flex flex-col rounded-2xl p-2 text-center transition-all border card-shadow " + (
+                isPicking ? "border-amber-700 bg-amber-50 ring-2 ring-amber-700/20"
+                : isToday ? "border-amber-700/40 bg-amber-50/30"
+                : assignedRecipe ? "border-stone-300 bg-white"
+                : "border-stone-200/60 bg-white/50"
+              )}
+            >
+              <div className={"text-[10px] font-bold uppercase tracking-wider " + (isToday ? "text-amber-800" : "text-stone-400")}>{day}</div>
+              <div className={"text-sm font-semibold mb-1 " + (isToday ? "text-amber-800" : "text-stone-600")}>{date.getDate()}</div>
+              {assignedRecipe ? (
+                <div className="text-[9px] leading-tight text-stone-700 font-medium flex-1 flex items-start" style={{display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden",textAlign:"left"}}>{assignedRecipe.name}</div>
+              ) : (
+                <div className="text-stone-300 text-base flex-1 flex items-center justify-center">+</div>
+              )}
+            </button>
           );
         })}
-        {filtered.length === 0 && <div className="text-center py-12 text-stone-400 text-sm">no meals match.</div>}
+      </div>
+
+      {/* Meal picker dropdown */}
+      {assigningDay !== null && (
+        <div className="bg-white rounded-2xl border border-amber-700/30 p-4 mb-5 card-shadow">
+          <div className="flex items-center justify-between mb-3">
+            <div className="font-display text-lg text-stone-800">
+              {DAYS[assigningDay]}, {new Date(startOfWeek.getTime() + assigningDay * 86400000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </div>
+            <div className="flex items-center gap-2">
+              {mealPlan[String(assigningDay)] && (
+                <button onClick={() => { onAssignDay(assigningDay, null); setAssigningDay(null); }} className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded-full border border-red-200 hover:bg-red-50">
+                  clear
+                </button>
+              )}
+              <button onClick={() => setAssigningDay(null)} className="text-stone-400 hover:text-stone-600 p-1"><X className="w-4 h-4" /></button>
+            </div>
+          </div>
+          <div className="relative mb-2">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search recipes…" className="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50" />
+          </div>
+          <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto">
+            {filteredForPicker.map((r) => {
+              const isAssigned = mealPlan[String(assigningDay)] === r.id;
+              const isSel = selected.includes(r.id);
+              return (
+                <button key={r.id} onClick={() => { onAssignDay(assigningDay, r.id); setAssigningDay(null); setSearch(""); }}
+                  className={"text-left px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-2 " + (isAssigned ? "bg-amber-800 text-amber-50" : "hover:bg-stone-50 text-stone-700")}>
+                  <span className="flex-1">{r.name}</span>
+                  {r.category && r.category !== "Other" && (
+                    <span className={"text-[10px] uppercase tracking-wider shrink-0 " + (isAssigned ? "text-amber-200" : "text-stone-400")}>{r.category}</span>
+                  )}
+                  {isSel && !isAssigned && <span className="text-[9px] text-emerald-600 font-semibold shrink-0">✓ added</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Selected meals not yet assigned to a day */}
+      {unplanned.length > 0 && (
+        <div className="mb-4">
+          <SectionLabel name="also this week" count={unplanned.length} />
+          <div className="grid gap-1.5">
+            {unplanned.map((id) => {
+              const r = recipes.find((x) => x.id === id);
+              if (!r) return null;
+              const ings = (r.ingredients || []).map(normIng);
+              const mult = multipliers[r.id] || 1;
+              return (
+                <div key={id} className="bg-white rounded-xl border border-amber-700/30 bg-amber-50/30 card-shadow">
+                  <div className="flex items-stretch">
+                    <button onClick={() => onToggle(r.id)} className="flex-1 flex items-center gap-3 p-3 text-left">
+                      <Checkbox checked={true} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="font-display text-lg leading-tight text-stone-900">{r.name}</span>
+                          {r.category && r.category !== "Other" && <span className="text-[10px] uppercase tracking-wider text-stone-500 font-semibold">{r.category}</span>}
+                        </div>
+                        {ings.length > 0 && (
+                          <div className="text-xs text-stone-500 truncate mt-0.5">{ings.slice(0, 4).map((i) => i.name).join(" · ")}{ings.length > 4 && " +" + (ings.length - 4)}</div>
+                        )}
+                      </div>
+                    </button>
+                    <div className="flex items-center pr-2 gap-1">
+                      <div className="flex items-center gap-0.5 bg-stone-100 rounded-full px-1.5 py-1" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => onSetMultiplier(r.id, mult - 1)} disabled={mult <= 1} className="w-5 h-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-white disabled:opacity-30 font-bold text-sm transition-colors">−</button>
+                        <span className="text-xs font-bold text-amber-800 min-w-[22px] text-center">{mult}×</span>
+                        <button onClick={() => onSetMultiplier(r.id, mult + 1)} disabled={mult >= 10} className="w-5 h-5 rounded-full flex items-center justify-center text-stone-600 hover:bg-white disabled:opacity-30 font-bold text-sm transition-colors">+</button>
+                      </div>
+                      <button onClick={() => onEdit(r)} className="p-2 text-stone-400 hover:text-stone-700"><Edit3 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {Object.keys(mealPlan).length === 0 && selected.length === 0 && (
+        <EmptyState icon={<ChefHat className="w-8 h-8" />} message="tap a day above to plan your meals, or browse the recipes tab." />
+      )}
+
+      {/* Quick add button */}
+      <div className="flex justify-center pt-2">
+        <button onClick={onAddRecipe} className="flex items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-amber-800 px-4 py-2 rounded-full border border-stone-200 hover:border-amber-700/40 transition-colors">
+          <Plus className="w-3.5 h-3.5" />add new recipe
+        </button>
       </div>
     </section>
   );
@@ -1224,6 +1221,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState(recipe.pdf_url || "");
   const fileRef = useRef(null);
 
   async function handleUrlImport() {
@@ -1309,6 +1307,21 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
         return;
       }
       applyImportResult({ name: parsedName, ingredients: parsedIngredients }, importUrl.trim());
+
+      // Upload PDF to Supabase Storage for later viewing
+      try {
+        const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("recipe-pdfs")
+          .upload(fileName, file, { contentType: "application/pdf", upsert: false });
+        if (!uploadError && uploadData) {
+          const { data: urlData } = supabase.storage.from("recipe-pdfs").getPublicUrl(fileName);
+          if (urlData?.publicUrl) setPdfUrl(urlData.publicUrl);
+        }
+      } catch (uploadErr) {
+        // PDF upload failed silently — ingredients still imported fine
+        console.warn("PDF upload failed:", uploadErr);
+      }
     } catch (e) {
       setImportError(`PDF import failed: ${e.message}`);
     } finally {
@@ -1420,7 +1433,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   async function handleSave() {
     if (!name.trim()) { alert("Give the recipe a name first."); return; }
     setSaving(true);
-    await onSave({ ...recipe, name: name.trim(), url: url.trim(), category, notes, cook_time: cookTime, servings, ingredients });
+    await onSave({ ...recipe, name: name.trim(), url: url.trim(), category, notes, cook_time: cookTime, servings, pdf_url: pdfUrl, ingredients });
     setSaving(false);
   }
 
@@ -1763,8 +1776,13 @@ function RecipeView({ recipe, isSelected, onToggle, onEdit, onClose, onToggleFav
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] font-semibold uppercase tracking-wider bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full">{recipe.category || "Other"}</span>
                 {recipe.url && (
-                  <a href={recipe.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} className="text-stone-400 hover:text-amber-800">
+                  <a href={recipe.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} className="text-stone-400 hover:text-amber-800" title="view recipe site">
                     <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+                {recipe.pdf_url && (
+                  <a href={recipe.pdf_url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-full hover:bg-amber-200/70 transition-colors" title="view saved PDF">
+                    PDF
                   </a>
                 )}
                 <button
