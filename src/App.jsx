@@ -27,18 +27,19 @@ const RECIPE_CATEGORIES = [
 // ─── Auto-category detection ─────────────────────────────────────────────────
 
 const DETECT_RULES = [
-  { s: "Produce", k: ["garlic","onion","tomato","potato","carrot","celery","spinach","broccoli","pepper","lemon","lime","mushroom","ginger","basil","thyme","rosemary","sage","parsley","cilantro","mint","dill","oregano","kale","cabbage","cucumber","zucchini","squash","avocado","corn","green bean","jarlic","minced garlic","scallion","shallot","leek","artichoke","arugula","asparagus","beet","bok choy","fennel","radish","turnip","yam","sweet potato"] },
-  { s: "Meat & Seafood", k: ["chicken","beef","steak","pork","turkey","lamb","salmon","shrimp","fish","bacon","sausage","kielbasa","ham","salami","pepperoni","ground beef","ground pork","ribeye","tenderloin","brisket","meatball","chorizo","prosciutto","deli","spicy sausage","ground sausage","ground turkey","cod","tilapia","tuna","crab","lobster","scallop","anchovy"] },
-  { s: "Dairy & Eggs", k: ["butter","milk","cream","cheese","egg","yogurt","parmesan","mozzarella","cheddar","ricotta","boursin","queso","oatmilk","keifer","kefir","cold foam","heavy cream","sour cream","cream cheese","buttermilk","ghee","provolone","gouda","brie","feta","swiss","jack cheese","pepper jack","shredded"] },
-  { s: "Bakery & Bread", k: ["bread","roll","bun","tortilla","flatbread","pita","naan","bagel","croissant","hawaiian","sourdough","baguette","english muffin","hoagie","ciabatta","focaccia"] },
-  { s: "Canned & Jarred", k: ["broth","stock","tomato paste","tomato sauce","fire roasted","diced tomato","coconut milk","bouillon","canned","chickpea","garbanzo","black bean","kidney bean","pinto bean","cannellini","olive","pickle","capers","roasted pepper","salsa verde","tapenade","water chestnut"] },
-  { s: "Dry Goods & Pasta", k: ["pasta","rice","noodle","orzo","flour","oat","cereal","cracker","chip","breadcrumb","quinoa","barley","couscous","polenta","cornstarch","corn starch","chicken rice","lasagna","spaghetti","penne","rigatoni","fusilli","linguine","fettuccine","tortellini","gnocchi","ramen","stuffing"] },
-  { s: "Spices & Seasonings", k: ["salt","paprika","cumin","oregano","cinnamon","cayenne","garlic powder","onion powder","chili powder","seasoning","bay leaf","bay leaves","italian seasoning","turmeric","nutmeg","allspice","red pepper flake","black pepper","white pepper","smoked paprika","sweet paprika","cardamom","coriander","fennel seed","garam masala","old bay","taco seasoning","cajun"] },
-  { s: "Condiments & Sauces", k: ["soy sauce","honey","mustard","ketchup","mayo","vinegar","worcestershire","sriracha","hot sauce","marinara","pasta sauce","pesto","ranch","dijon","balsamic","vinaigrette","teriyaki","hoisin","molasses","maple syrup","jam","jelly","fish sauce","oyster sauce","ponzu","tahini","tamari","bbq"] },
-  { s: "Oils & Baking", k: ["avocado oil","olive oil","vegetable oil","canola oil","sesame oil","coconut oil","baking powder","baking soda","brown sugar","chocolate chip","cocoa","vanilla extract","yeast","shortening","cream of tartar","powdered sugar","cooking spray"] },
-  { s: "Beverages & Wine", k: ["wine","beer","cabernet","sauvignon blanc","chardonnay","merlot","pinot","prosecco","white wine","red wine","cider","vodka","rum","whiskey","bourbon","tequila","gin","sake","juice","coffee","tea","lemonade","club soda","seltzer","kombucha"] },
-  { s: "Frozen", k: ["frozen","nugget","ice cream","popsicle","edamame","tater tot","gelato","sherbet","frozen pea","frozen corn","frozen spinach","frozen broccoli"] },
-  { s: "Household", k: ["toilet paper","paper plate","paper towel","trash bag","dish soap","detergent","aluminum foil","plastic wrap","parchment","ziplock","napkin","sponge","tissue","candle","battery","lotion","hand soap"] },
+  // Spices FIRST — before produce, so "black pepper", "dried thyme" etc. don't get caught by produce keywords
+  { s: "Spices & Seasonings", k: ["black pepper","white pepper","red pepper flake","cayenne pepper","garlic powder","onion powder","garlic salt","celery salt","kosher salt","sea salt","table salt","pink salt","smoked paprika","sweet paprika","paprika","cumin","oregano","cinnamon","cayenne","chili powder","chili flake","seasoning","bay leaf","bay leaves","italian seasoning","turmeric","nutmeg","allspice","cardamom","coriander","fennel seed","garam masala","old bay","taco seasoning","cajun","dried thyme","dried rosemary","dried sage","dried basil","dried oregano","dried dill","dried parsley","dried mint","dried cilantro","ground coriander","ground cumin","ground ginger","ground clove","ground nutmeg","ground cinnamon","cracked pepper","pepper flake","red flake","five spice","za'atar","sumac","turmeric","saffron","mustard powder","cream of tartar","poppy seed","sesame seed","caraway","anise","star anise","clove","peppercorn"] },
+  { s: "Produce", k: ["fresh garlic","garlic clove","garlic bulb","yellow onion","red onion","white onion","green onion","vidalia","shallot","scallion","leek","chive","tomato","potato","sweet potato","yam","carrot","celery","spinach","broccoli","bell pepper","jalapeño","serrano","anaheim pepper","poblano","habanero","lemon","lime","orange","grapefruit","mushroom","fresh ginger","basil","thyme","rosemary","sage","parsley","cilantro","mint","dill","fresh herb","kale","cabbage","cucumber","zucchini","squash","avocado","corn","green bean","jarlic","minced garlic","artichoke","arugula","asparagus","beet","bok choy","fennel","radish","turnip","banana","apple","mango","berry","strawberry","blueberry","raspberry","cherry","grape","peach","pear","plum","watermelon","cantaloupe","pineapple","pomegranate"] },
+  { s: "Meat & Seafood", k: ["chicken breast","chicken thigh","chicken drumstick","chicken wing","chicken tender","whole chicken","ground chicken","ground turkey","turkey breast","beef","steak","pork","lamb","veal","bison","venison","duck","salmon","shrimp","fish","tilapia","cod","tuna","halibut","bacon","sausage","kielbasa","ham","salami","pepperoni","ground beef","ground pork","ribeye","tenderloin","brisket","meatball","chorizo","prosciutto","deli meat","spicy sausage","ground sausage","chicken"] },
+  { s: "Dairy & Eggs", k: ["unsalted butter","salted butter","butter","whole milk","skim milk","2% milk","oat milk","almond milk","milk","heavy cream","heavy whipping cream","whipping cream","light cream","half and half","sour cream","cream cheese","cream","egg","yogurt","parmesan","parmigiano","mozzarella","cheddar","ricotta","boursin","queso","oatmilk","keifer","kefir","cold foam","buttermilk","ghee","provolone","gouda","brie","feta","swiss","jack cheese","pepper jack","shredded cheese","cottage cheese","mascarpone"] },
+  { s: "Bakery & Bread", k: ["bread","sandwich roll","dinner roll","hamburger bun","hot dog bun","tortilla","flatbread","pita","naan","bagel","croissant","hawaiian roll","slider bun","sourdough","baguette","english muffin","hoagie","ciabatta","focaccia","pretzel bun","brioche"] },
+  { s: "Canned & Jarred", k: ["chicken broth","beef broth","vegetable broth","chicken stock","beef stock","vegetable stock","broth","stock","tomato paste","tomato sauce","crushed tomato","diced tomato","whole tomato","fire roasted tomato","fire roasted","coconut milk","bouillon cube","chicken bouillon","beef bouillon","canned chickpea","canned garbanzo","black bean","kidney bean","pinto bean","cannellini","white bean","olive","kalamata","green olive","pickle","dill pickle","bread and butter pickle","capers","roasted red pepper","salsa verde","tapenade","water chestnut","artichoke heart","sun dried tomato","chipotle","adobo"] },
+  { s: "Dry Goods & Pasta", k: ["pasta","spaghetti","penne","rigatoni","fusilli","linguine","fettuccine","tortellini","gnocchi","lasagna noodle","egg noodle","ramen noodle","noodle","orzo","rice","brown rice","white rice","jasmine rice","basmati rice","arborio","couscous","quinoa","barley","farro","lentil","oat","rolled oat","flour","all purpose flour","bread flour","wheat flour","almond flour","breadcrumb","panko","cracker","graham cracker","corn starch","cornstarch","arrowroot","stuffing","polenta","grits","chicken rice mix","cereal","granola","chip","tortilla chip","potato chip"] },
+  { s: "Condiments & Sauces", k: ["soy sauce","tamari","worcestershire","fish sauce","oyster sauce","hoisin","teriyaki","sriracha","hot sauce","buffalo sauce","honey","maple syrup","agave","molasses","mustard","dijon","yellow mustard","whole grain mustard","ketchup","mayo","mayonnaise","ranch","blue cheese dressing","italian dressing","balsamic vinegar","red wine vinegar","white wine vinegar","apple cider vinegar","rice vinegar","vinegar","vinaigrette","balsamic","pesto","marinara","pasta sauce","pizza sauce","tomato sauce","bbq sauce","steak sauce","ponzu","tahini","jam","jelly","preserves","chutney","relish"] },
+  { s: "Oils & Baking", k: ["olive oil","extra virgin olive oil","avocado oil","vegetable oil","canola oil","coconut oil","sesame oil","peanut oil","sunflower oil","grapeseed oil","cooking spray","baking powder","baking soda","active dry yeast","instant yeast","vanilla extract","almond extract","brown sugar","white sugar","powdered sugar","granulated sugar","confectioner","chocolate chip","semi sweet chocolate","dark chocolate","cocoa powder","unsweetened cocoa","shortening","lard","nonstick spray"] },
+  { s: "Beverages & Wine", k: ["white wine","red wine","cabernet sauvignon","sauvignon blanc","chardonnay","merlot","pinot noir","pinot grigio","prosecco","sparkling wine","dry white wine","dry red wine","beer","lager","ale","cider","sake","bourbon","whiskey","vodka","rum","tequila","gin","brandy","orange juice","apple juice","lemon juice","lime juice","juice","coffee","espresso","tea","kombucha","club soda","sparkling water","seltzer","lemonade"] },
+  { s: "Frozen", k: ["frozen pea","frozen corn","frozen spinach","frozen broccoli","frozen berry","frozen mango","frozen edamame","frozen shrimp","tater tot","french fry","ice cream","gelato","sherbet","popsicle","frozen nugget","frozen waffle","frozen pizza"] },
+  { s: "Household", k: ["toilet paper","paper plate","paper towel","paper napkin","trash bag","garbage bag","dish soap","laundry detergent","aluminum foil","plastic wrap","saran wrap","parchment paper","wax paper","ziplock bag","ziploc","sandwich bag","freezer bag","sponge","tissue","kleenex","candle","battery","hand lotion","hand soap","dish sponge"] },
 ];
 
 function detectSection(name) {
@@ -65,9 +66,91 @@ function normIng(i) {
   return { name: i.name || "", quantity: i.quantity || "" };
 }
 
-// Scale a quantity string by a multiplier, preserving the unit
-// e.g. scaleQuantity("1 cup", 2) => "2 cups", scaleQuantity("1/2 cup", 3) => "1 1/2 cups"
-function scaleQuantity(qty, mult) {
+// ─── Quantity math ────────────────────────────────────────────────────────────
+
+// Unit normalization — map aliases to canonical form
+const UNIT_ALIASES = {
+  "tablespoon": "tbsp", "tablespoons": "tbsp", "tbsps": "tbsp", "tbs": "tbsp",
+  "teaspoon": "tsp", "teaspoons": "tsp", "tsps": "tsp",
+  "cup": "cup", "cups": "cup",
+  "ounce": "oz", "ounces": "oz",
+  "pound": "lb", "pounds": "lb", "lbs": "lb",
+  "gram": "g", "grams": "g",
+  "kilogram": "kg", "kilograms": "kg",
+  "milliliter": "ml", "milliliters": "ml",
+  "liter": "l", "liters": "l",
+  "quart": "qt", "quarts": "qt",
+  "pint": "pt", "pints": "pt",
+  "clove": "clove", "cloves": "clove",
+  "can": "can", "cans": "can",
+  "sprig": "sprig", "sprigs": "sprig",
+};
+
+function parseQtyNum(str) {
+  if (!str) return null;
+  const UNICODE_FRACS = { "\u00bc":"1/4","\u00bd":"1/2","\u00be":"3/4","\u2153":"1/3","\u2154":"2/3","\u215b":"1/8","\u215c":"3/8","\u215d":"5/8","\u215e":"7/8" };
+  let s = str.trim();
+  for (const [uc, rep] of Object.entries(UNICODE_FRACS)) s = s.split(uc).join(" " + rep);
+  s = s.replace(/\s+/g, " ").trim();
+  const m = s.match(/^(\d+(?:\s+\d+\/\d+|\.\d+|\/\d+)?)\s*(.*)/);
+  if (!m) return null;
+  let num = 0;
+  const parts = m[1].trim().split(/\s+/);
+  for (const p of parts) {
+    if (p.includes("/")) { const [n, d] = p.split("/"); num += parseInt(n) / parseInt(d); }
+    else num += parseFloat(p) || 0;
+  }
+  const rawUnit = m[2].trim().toLowerCase().replace(/\.$/, "");
+  const unit = UNIT_ALIASES[rawUnit] || rawUnit;
+  return { num, unit };
+}
+
+// Sum an array of quantity strings — adds same-unit quantities, joins different units
+function sumQuantities(qtys) {
+  if (!qtys || qtys.length === 0) return "";
+  if (qtys.length === 1) return qtys[0];
+
+  // Group by unit
+  const byUnit = {};
+  const unparsed = [];
+  for (const q of qtys) {
+    const parsed = parseQtyNum(q);
+    if (!parsed) { unparsed.push(q); continue; }
+    const key = parsed.unit;
+    if (!byUnit[key]) byUnit[key] = 0;
+    byUnit[key] += parsed.num;
+  }
+
+  const parts = Object.entries(byUnit).map(([unit, total]) => {
+    const n = formatNumber(total);
+    return unit ? `${n} ${unit}` : n;
+  });
+
+  return [...parts, ...unparsed].join(" + ");
+}
+
+// Normalize ingredient name for matching — lowercase, strip common adjectives
+function normalizeIngName(name) {
+  return (name || "")
+    .toLowerCase()
+    .replace(/\b(fresh|dried|ground|whole|unsalted|salted|boneless|skinless|large|medium|small|organic|low.sodium|low.fat|heavy|light|extra|fine|coarse|cracked|minced|crushed|chopped|sliced|diced|shredded|grated|packed|heaping|about|approximately)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Are two ingredient names similar enough to merge?
+// e.g. "Black pepper" and "Cracked black pepper" → true
+// "Chicken broth" and "Chicken stock" → false (different ingredients)
+function ingredientsSimilar(a, b) {
+  const na = normalizeIngName(a);
+  const nb = normalizeIngName(b);
+  if (na === nb) return true;
+  // One contains the other (e.g. "butter" vs "unsalted butter")
+  if (na.includes(nb) || nb.includes(na)) return true;
+  return false;
+}
+
+
   if (!qty || mult === 1) return qty;
   // Extract leading number (integer, decimal, or fraction)
   const match = qty.match(/^(\d+(?:\.\d+)?(?:\/\d+)?(?:\s+\d+\/\d+)?)\s*(.*)/);
@@ -345,8 +428,11 @@ export default function App() {
 
   if (recipes === null) return <LoadingScreen />;
 
-  // Aggregate: name -> { count, quantities[] } — respects per-meal multipliers
+  // Aggregate: name -> { count, quantities[], canonicalName }
+  // Merges similar ingredient names (e.g. "Black pepper" + "Cracked black pepper")
   const agg = {};
+  const aggNameMap = {}; // normalized name -> canonical key in agg
+
   selectedMeals.forEach((id) => {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) return;
@@ -354,12 +440,28 @@ export default function App() {
     (recipe.ingredients || []).forEach((raw) => {
       const { name, quantity } = normIng(raw);
       if (!name) return;
-      if (!agg[name]) agg[name] = { count: 0, quantities: [] };
-      agg[name].count += mult;
+
+      // Find if a similar ingredient already exists in agg
+      const normName = normalizeIngName(name);
+      let key = aggNameMap[normName];
+
+      if (!key) {
+        // Check existing keys for similarity
+        const similarKey = Object.keys(agg).find((k) => ingredientsSimilar(k, name));
+        if (similarKey) {
+          key = similarKey;
+          aggNameMap[normName] = key;
+        } else {
+          key = name;
+          aggNameMap[normName] = key;
+        }
+      }
+
+      if (!agg[key]) agg[key] = { count: 0, quantities: [] };
+      agg[key].count += mult;
       if (quantity) {
-        // Scale the numeric part of the quantity
         const scaled = scaleQuantity(quantity, mult);
-        agg[name].quantities.push(scaled);
+        agg[key].quantities.push(scaled);
       }
     });
   });
@@ -1137,7 +1239,7 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
     const lines = groups.map((g) => {
       const header = `\n${g.section.toUpperCase()}\n${"─".repeat(g.section.length)}`;
       const items = g.items.map((item) => {
-        const qty = item.quantities && item.quantities.length > 0 ? item.quantities.join(" + ") : "";
+        const qty = sumQuantities(item.quantities);
         return qty ? `  ${item.name} — ${qty}` : `  ${item.name}`;
       }).join("\n");
       return `${header}\n${items}`;
@@ -1171,7 +1273,7 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
           <div class="section">
             <div class="section-title">${g.section}</div>
             ${g.items.map((item) => {
-              const qty = item.quantities && item.quantities.length > 0 ? item.quantities.join(" + ") : "";
+              const qty = sumQuantities(item.quantities);
               return `<div class="item"><span><span class="checkbox"></span><span class="item-name">${item.name}</span></span>${qty ? `<span class="item-qty">${qty}</span>` : ""}</div>`;
             }).join("")}
           </div>
@@ -1217,7 +1319,7 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
             <div className="bg-white rounded-xl border border-stone-200/70 card-shadow divide-y divide-stone-100">
               {g.items.map((item) => {
                 const isChecked = checked.includes(item.name);
-                const qtyDisplay = item.quantities && item.quantities.length > 0 ? item.quantities.join(" + ") : "";
+                const qtyDisplay = sumQuantities(item.quantities);
                 return (
                   <div key={item.name} className={`flex items-center gap-3 px-4 py-3 transition-colors ${isChecked ? "bg-stone-50" : ""}`}>
                     <button onClick={() => onToggle(item.name)} className="flex items-center gap-3 flex-1 text-left min-w-0">
