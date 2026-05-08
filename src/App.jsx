@@ -141,6 +141,8 @@ function subtractQuantity(needed, have) {
   if (remainder <= 0) return null; // fully covered
   return formatNumber(remainder) + (n.unit ? " " + n.unit : "");
 }
+
+function timeAgo(isoString) {
   if (!isoString) return null;
   const diff = Date.now() - new Date(isoString).getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
