@@ -151,6 +151,7 @@ function ingredientsSimilar(a, b) {
 }
 
 
+function scaleQuantity(qty, mult) {
   if (!qty || mult === 1) return qty;
   // Extract leading number (integer, decimal, or fraction)
   const match = qty.match(/^(\d+(?:\.\d+)?(?:\/\d+)?(?:\s+\d+\/\d+)?)\s*(.*)/);
