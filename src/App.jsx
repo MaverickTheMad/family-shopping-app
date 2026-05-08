@@ -1223,6 +1223,7 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
   const [saving, setSaving] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(recipe.pdf_url || "");
   const fileRef = useRef(null);
+  const ingredientsRef = useRef(null);
 
   async function handleUrlImport() {
     if (!importUrl.trim()) return;
@@ -1340,6 +1341,8 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
     const updates = {};
     (data.ingredients || []).forEach((i) => { if (i.name && i.section) updates[i.name] = i.section; });
     Object.entries(updates).forEach(([ing, sec]) => onSetSection(ing, sec));
+    // Scroll to ingredients so user can review and edit
+    setTimeout(() => ingredientsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
   }
 
   function parsePdfText(text) {
@@ -1348,6 +1351,8 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
 
     function parseIngredientLine(raw) {
       let str = raw.trim();
+      // Strip leading punctuation artifacts from pdfjs (e.g. ". baby potatoes")
+      str = str.replace(/^[.\-–—•*·]\s*/, "");
       for (const uc of Object.keys(UNICODE_FRACTIONS)) str = str.split(uc).join(" " + UNICODE_FRACTIONS[uc]);
       str = str.replace(/\s+/g, " ").trim();
       const qtyMatch = str.match(/^(\d+(?:[\/\-]\d+)?(?:\.\d+)?(?:\s+\d+\/\d+)?)\s*/);
@@ -1360,10 +1365,20 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
       }
       let ingName = rest
         .replace(/^,\s*/, "")
+        // Remove parentheticals like (optional), (divided), (see notes)
         .replace(/\([^)]*\)/g, "")
-        .replace(/,.*$/, "")
-        // Remove trailing standalone numbers (page numbers / next-ingredient bleeding)
+        // Remove "EACH:" prefix
+        .replace(/^EACH:\s*/i, "")
+        // Remove everything after prep instruction keywords
+        .replace(/\s*[,;]\s*(divided|drained|rinsed|chopped|minced|diced|sliced|halved|quartered|see notes?|optional|to taste|room temp|softened|melted|packed|sifted|heaping|about|approximately).*/i, "")
+        // Remove trailing prep notes after a space (e.g. "Stew meat see notes" → "Stew meat")
+        .replace(/\s+see notes?.*$/i, "")
+        .replace(/\s+or merlot.*$/i, "")
+        .replace(/\s+\*optional\*.*$/i, "")
+        // Remove trailing standalone numbers (page artifacts)
         .replace(/\s+\d+$/, "")
+        // Remove trailing descriptors like "cut into 1-inch chunks", "halved or quartered"
+        .replace(/\s+(cut|halved|quartered|sliced|diced|chopped|minced|peeled|trimmed|divided|thawed|frozen|fresh|dried|ground|whole|large|medium|small)\b.*/i, "")
         .replace(/\s+/g, " ")
         .trim();
       if (ingName.length > 0) ingName = ingName.charAt(0).toUpperCase() + ingName.slice(1);
@@ -1516,18 +1531,21 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
             </div>
           </div>
 
-          <div>
+          <div ref={ingredientsRef}>
             <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">ingredients <span className="lowercase italic font-normal">({ingredients.length})</span></label>
+            {ingredients.length > 0 && (
+              <p className="text-[11px] text-stone-400 mt-0.5 mb-1.5">tap any name or qty to edit before saving</p>
+            )}
             <div className="flex gap-2 mt-1.5">
               <input value={newIngQty} onChange={(e) => setNewIngQty(e.target.value)} placeholder="qty" className="w-20 px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 shrink-0" />
               <input value={newIngName} onChange={(e) => setNewIngName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addIngredient()} placeholder="ingredient name" className="flex-1 px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50" />
               <button onClick={addIngredient} className="bg-stone-900 text-amber-50 px-3 rounded-lg hover:bg-stone-800 shrink-0"><Plus className="w-4 h-4" /></button>
             </div>
-            <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
+            <div className="mt-3 space-y-1.5 overflow-y-auto" style={{ maxHeight: ingredients.length > 5 ? "400px" : "260px" }}>
               {ingredients.map((ing, idx) => (
                 <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-white border border-stone-200 rounded-lg">
                   <input value={ing.quantity} onChange={(e) => updateIngredient(idx, "quantity", e.target.value)} placeholder="qty" className="w-20 text-xs bg-stone-50 border border-stone-200 rounded px-2 py-1 focus:outline-none focus:border-amber-700/50 shrink-0 text-stone-600" />
-                  <span className="text-sm text-stone-800 flex-1 min-w-0 truncate">{ing.name}</span>
+                  <input value={ing.name} onChange={(e) => updateIngredient(idx, "name", e.target.value)} placeholder="ingredient name" className="text-sm text-stone-800 flex-1 min-w-0 bg-transparent border-0 focus:outline-none focus:bg-stone-50 rounded px-1 -mx-1" />
                   <select value={getSection(ing.name, sections)} onChange={(e) => onSetSection(ing.name, e.target.value)} className="text-[10px] uppercase tracking-wider bg-stone-100 px-2 py-1 rounded-md text-stone-600 border-0 focus:outline-none shrink-0 max-w-[110px]">
                     {SECTION_ORDER.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
