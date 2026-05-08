@@ -220,6 +220,7 @@ export default function App() {
   const [viewingRecipe, setViewingRecipe] = useState(null);
   const [toast, setToast] = useState("");
   const stateTimer = useRef(null);
+  const isLocalChange = useRef(false); // prevents remote updates from overwriting local in-flight changes
 
   useEffect(() => {
     seedIfEmpty().then(fetchAll).then((d) => {
@@ -232,12 +233,78 @@ export default function App() {
       setLastCooked(d.lastCooked);
       setMealPlan(d.mealPlan);
     });
+
+    // ── Real-time subscriptions ──
+    // shopping_state — selected meals, pantry, checked, meal plan
+    const stateSub = supabase
+      .channel("shopping_state_changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "shopping_state" }, (payload) => {
+        if (isLocalChange.current) return; // skip if we just saved this ourselves
+        const st = payload.new;
+        if (!st) return;
+        setSelectedMeals(st.selected_meals || []);
+        setPantryItems(st.pantry_items || []);
+        setCheckedItems(st.checked_items || []);
+        setMealPlan(st.meal_plan || {});
+      })
+      .subscribe();
+
+    // recipes — new recipes, edits, deletes
+    const recipesSub = supabase
+      .channel("recipes_changes")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "recipes" }, (payload) => {
+        setRecipes((prev) => [...prev, payload.new].sort((a, b) => a.name.localeCompare(b.name)));
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "recipes" }, (payload) => {
+        setRecipes((prev) => prev.map((r) => r.id === payload.new.id ? payload.new : r));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "recipes" }, (payload) => {
+        setRecipes((prev) => prev.filter((r) => r.id !== payload.old.id));
+      })
+      .subscribe();
+
+    // extras — toggles, adds, deletes
+    const extrasSub = supabase
+      .channel("extras_changes")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "extras" }, (payload) => {
+        setExtras((prev) => [...prev, payload.new]);
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "extras" }, (payload) => {
+        setExtras((prev) => prev.map((e) => e.id === payload.new.id ? payload.new : e));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "extras" }, (payload) => {
+        setExtras((prev) => prev.filter((e) => e.id !== payload.old.id));
+      })
+      .subscribe();
+
+    // sections — ingredient category changes
+    const sectionsSub = supabase
+      .channel("sections_changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "sections" }, (payload) => {
+        if (payload.new && payload.new.ingredient) {
+          setSections((prev) => ({ ...prev, [payload.new.ingredient]: payload.new.section }));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(stateSub);
+      supabase.removeChannel(recipesSub);
+      supabase.removeChannel(extrasSub);
+      supabase.removeChannel(sectionsSub);
+    };
   }, []);
 
   useEffect(() => {
     if (recipes === null) return;
     if (stateTimer.current) clearTimeout(stateTimer.current);
-    stateTimer.current = setTimeout(() => saveState(selectedMeals, pantryItems, checkedItems, mealPlan), 600);
+    isLocalChange.current = true;
+    stateTimer.current = setTimeout(() => {
+      saveState(selectedMeals, pantryItems, checkedItems, mealPlan).finally(() => {
+        // Allow remote updates again after a short buffer
+        setTimeout(() => { isLocalChange.current = false; }, 1000);
+      });
+    }, 600);
   }, [selectedMeals, pantryItems, checkedItems, mealPlan]);
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2000); }
