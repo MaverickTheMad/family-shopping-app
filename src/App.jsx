@@ -692,26 +692,14 @@ function Header({ onNewTrip }) {
 // ─── Meals Tab ────────────────────────────────────────────────────────────────
 
 function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onToggle, onSetMultiplier, onToggleFavorite, onAssignDay, onEdit, onAddRecipe }) {
-  const [assigningDay, setAssigningDay] = useState(null); // absolute day offset from start of week
+  const [assigningDay, setAssigningDay] = useState(null);
   const [search, setSearch] = useState("");
-  const [weekOffset, setWeekOffset] = useState(0); // 0=this week, 1=next week, 2=week after
 
   const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const today = new Date();
+  today.setHours(0,0,0,0);
   const startOfWeek = new Date(today);
   startOfWeek.setDate(today.getDate() - today.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-
-  // 3 weeks = days 0-20
-  const WEEKS = [0, 1, 2];
-
-  const filteredForPicker = [...recipes]
-    .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  // Meals selected but not assigned to any day
-  const assignedIds = new Set(Object.values(mealPlan).filter(Boolean));
-  const unplanned = selected.filter((id) => !assignedIds.has(id));
 
   function getDate(dayOffset) {
     const d = new Date(startOfWeek);
@@ -719,56 +707,88 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
     return d;
   }
 
-  function weekLabel(w) {
-    if (w === 0) return "This Week";
-    if (w === 1) return "Next Week";
-    return "Week of " + getDate(w * 7).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const filteredForPicker = [...recipes]
+    .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const assignedIds = new Set(Object.values(mealPlan).filter(Boolean));
+  const unplanned = selected.filter((id) => !assignedIds.has(id));
+
+  // Month label for a week row
+  function weekMonthLabel(weekIdx) {
+    const sunday = getDate(weekIdx * 7);
+    const saturday = getDate(weekIdx * 7 + 6);
+    if (sunday.getMonth() === saturday.getMonth()) {
+      return sunday.toLocaleDateString("en-US", { month: "long" });
+    }
+    return sunday.toLocaleDateString("en-US", { month: "short" }) + " / " + saturday.toLocaleDateString("en-US", { month: "short" });
   }
 
   return (
     <section className="pt-4">
-      <SectionHeader eyebrow="step one" title="this week's plan" subtitle="tap a day to assign a meal. use the recipes tab to browse your collection." />
+      <SectionHeader eyebrow="step one" title="meal planner" subtitle="tap any day to assign a meal. all three weeks feed into your shopping list." />
 
-      {/* Week tabs */}
-      <div className="flex gap-1.5 mb-3">
-        {WEEKS.map((w) => (
-          <button key={w} onClick={() => { setWeekOffset(w); setAssigningDay(null); }}
-            className={"flex-1 py-2 rounded-full text-xs font-medium transition-colors " + (weekOffset === w ? "bg-amber-800 text-amber-50" : "bg-white text-stone-600 border border-stone-200 hover:border-stone-300")}>
-            {weekLabel(w)}
-          </button>
+      {/* Calendar grid — 3 weeks */}
+      <div className="bg-white rounded-2xl border border-stone-200/70 card-shadow overflow-hidden mb-5">
+        {/* Day headers */}
+        <div className="grid grid-cols-7 border-b border-stone-100">
+          {DAYS.map((d) => (
+            <div key={d} className="text-center py-2 text-[10px] font-bold uppercase tracking-wider text-stone-400">{d}</div>
+          ))}
+        </div>
+
+        {/* 3 week rows */}
+        {[0, 1, 2].map((weekIdx) => (
+          <div key={weekIdx}>
+            {/* Week label */}
+            <div className="px-3 py-1 bg-stone-50/80 border-b border-stone-100 text-[10px] font-semibold uppercase tracking-wider text-stone-400 flex items-center justify-between">
+              <span>{weekIdx === 0 ? "This week" : weekIdx === 1 ? "Next week" : "Week after"}</span>
+              <span>{weekMonthLabel(weekIdx)}</span>
+            </div>
+            {/* Day cells */}
+            <div className="grid grid-cols-7 divide-x divide-stone-100 border-b border-stone-100 last:border-b-0">
+              {DAYS.map((_, i) => {
+                const dayOffset = weekIdx * 7 + i;
+                const date = getDate(dayOffset);
+                const isToday = date.getTime() === today.getTime();
+                const isPast = date < today && !isToday;
+                const assignedId = mealPlan[String(dayOffset)];
+                const assignedRecipe = assignedId ? recipes.find((r) => r.id === assignedId) : null;
+                const isPicking = assigningDay === dayOffset;
+
+                return (
+                  <button
+                    key={dayOffset}
+                    onClick={() => setAssigningDay(isPicking ? null : dayOffset)}
+                    className={"flex flex-col p-1.5 min-h-[72px] text-left transition-colors relative " + (
+                      isPicking ? "bg-amber-50 ring-2 ring-inset ring-amber-600"
+                      : assignedRecipe ? "bg-white hover:bg-amber-50/30"
+                      : isPast ? "bg-stone-50/40"
+                      : "bg-white hover:bg-amber-50/20"
+                    )}
+                  >
+                    {/* Date number */}
+                    <div className={"text-xs font-semibold mb-1 w-5 h-5 flex items-center justify-center rounded-full " + (
+                      isToday ? "bg-amber-800 text-white"
+                      : isPast ? "text-stone-300"
+                      : "text-stone-500"
+                    )}>{date.getDate()}</div>
+
+                    {/* Assigned meal */}
+                    {assignedRecipe ? (
+                      <div className={"text-[9px] leading-tight font-medium flex-1 " + (isPast ? "text-stone-400" : "text-stone-700")}
+                        style={{display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden"}}>
+                        {assignedRecipe.name}
+                      </div>
+                    ) : (
+                      !isPast && <div className="text-stone-200 text-base flex-1 flex items-end pb-0.5">+</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ))}
-      </div>
-
-      {/* 7-day calendar for selected week */}
-      <div className="grid grid-cols-7 gap-1 mb-4">
-        {DAYS.map((day, i) => {
-          const dayOffset = weekOffset * 7 + i;
-          const date = getDate(dayOffset);
-          const isToday = date.toDateString() === today.toDateString();
-          const isPast = date < new Date(today.setHours(0,0,0,0)) && !isToday;
-          const assignedId = mealPlan[String(dayOffset)];
-          const assignedRecipe = assignedId ? recipes.find((r) => r.id === assignedId) : null;
-          const isPicking = assigningDay === dayOffset;
-
-          return (
-            <button key={dayOffset} onClick={() => setAssigningDay(isPicking ? null : dayOffset)}
-              className={"flex flex-col rounded-2xl p-1.5 text-center transition-all border min-h-[80px] " + (
-                isPicking ? "border-amber-700 bg-amber-50 ring-2 ring-amber-700/20"
-                : isToday ? "border-amber-700/50 bg-amber-50/40"
-                : assignedRecipe ? "border-stone-300 bg-white card-shadow"
-                : isPast ? "border-stone-100 bg-stone-50/50 opacity-60"
-                : "border-stone-200/60 bg-white/60"
-              )}>
-              <div className={"text-[9px] font-bold uppercase tracking-wider " + (isToday ? "text-amber-800" : "text-stone-400")}>{day}</div>
-              <div className={"text-sm font-semibold mb-1 " + (isToday ? "text-amber-800 font-bold" : "text-stone-600")}>{date.getDate()}</div>
-              {assignedRecipe ? (
-                <div className="text-[8px] leading-tight text-stone-700 font-medium flex-1 text-left" style={{display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{assignedRecipe.name}</div>
-              ) : (
-                <div className="text-stone-300 flex-1 flex items-center justify-center text-base">+</div>
-              )}
-            </button>
-          );
-        })}
       </div>
 
       {/* Meal picker */}
@@ -776,35 +796,41 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
         <div className="bg-white rounded-2xl border border-amber-700/30 p-4 mb-4 card-shadow">
           <div className="flex items-center justify-between mb-3">
             <div className="font-display text-lg text-stone-800">
-              {DAYS[assigningDay % 7]}, {getDate(assigningDay).toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+              {getDate(assigningDay).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
             </div>
             <div className="flex items-center gap-2">
               {mealPlan[String(assigningDay)] && (
-                <button onClick={() => { onAssignDay(assigningDay, null); setAssigningDay(null); }} className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded-full border border-red-200 hover:bg-red-50">clear</button>
+                <button onClick={() => { onAssignDay(assigningDay, null); setAssigningDay(null); }}
+                  className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded-full border border-red-200 hover:bg-red-50">
+                  clear
+                </button>
               )}
               <button onClick={() => setAssigningDay(null)} className="text-stone-400 hover:text-stone-600 p-1"><X className="w-4 h-4" /></button>
             </div>
           </div>
           <div className="relative mb-2">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search recipes…" className="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search recipes…"
+              className="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-full text-sm focus:outline-none focus:border-amber-700/50" />
           </div>
           <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto">
             {filteredForPicker.map((r) => {
               const isAssigned = mealPlan[String(assigningDay)] === r.id;
               const isSel = selected.includes(r.id);
-              // Find if this recipe is assigned elsewhere
               const assignedElsewhere = Object.entries(mealPlan).find(([k, v]) => v === r.id && Number(k) !== assigningDay);
-              const elsewhereDay = assignedElsewhere ? getDate(Number(assignedElsewhere[0])).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : null;
+              const elsewhereLabel = assignedElsewhere
+                ? getDate(Number(assignedElsewhere[0])).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+                : null;
               return (
-                <button key={r.id} onClick={() => { onAssignDay(assigningDay, r.id); setAssigningDay(null); setSearch(""); }}
+                <button key={r.id}
+                  onClick={() => { onAssignDay(assigningDay, r.id); setAssigningDay(null); setSearch(""); }}
                   className={"text-left px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-2 " + (isAssigned ? "bg-amber-800 text-amber-50" : "hover:bg-stone-50 text-stone-700")}>
                   <span className="flex-1">{r.name}</span>
                   {r.category && r.category !== "Other" && (
                     <span className={"text-[10px] uppercase tracking-wider shrink-0 " + (isAssigned ? "text-amber-200" : "text-stone-400")}>{r.category}</span>
                   )}
-                  {elsewhereDay && !isAssigned && <span className="text-[9px] text-stone-400 shrink-0">{elsewhereDay}</span>}
-                  {isSel && !isAssigned && !elsewhereDay && <span className="text-[9px] text-emerald-600 font-semibold shrink-0">✓</span>}
+                  {elsewhereLabel && !isAssigned && <span className="text-[9px] text-stone-400 shrink-0">{elsewhereLabel}</span>}
+                  {isSel && !isAssigned && !elsewhereLabel && <span className="text-[9px] text-emerald-600 font-semibold shrink-0">✓</span>}
                 </button>
               );
             })}
@@ -854,7 +880,7 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
       )}
 
       {Object.keys(mealPlan).length === 0 && selected.length === 0 && (
-        <EmptyState icon={<ChefHat className="w-8 h-8" />} message="tap a day above to plan your meals, or browse the recipes tab." />
+        <EmptyState icon={<ChefHat className="w-8 h-8" />} message="tap any day on the calendar to assign a meal." />
       )}
 
       <div className="flex justify-center pt-2">
