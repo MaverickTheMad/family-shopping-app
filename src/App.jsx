@@ -338,7 +338,7 @@ export default function App() {
   const [viewingRecipe, setViewingRecipe] = useState(null);
   const [toast, setToast] = useState("");
   const stateTimer = useRef(null);
-  const isLocalChange = useRef(false); // prevents remote updates from overwriting local in-flight changes
+  const lastSavedState = useRef(null);
 
   useEffect(() => {
     seedIfEmpty().then(fetchAll).then((d) => {
@@ -350,16 +350,27 @@ export default function App() {
       setCheckedItems(d.checkedItems);
       setLastCooked(d.lastCooked);
       setMealPlan(d.mealPlan);
+      lastSavedState.current = JSON.stringify({
+        selected_meals: d.selectedMeals,
+        pantry_items: d.pantryItems,
+        checked_items: d.checkedItems,
+        meal_plan: d.mealPlan,
+      });
     });
 
     // ── Real-time subscriptions ──
-    // shopping_state — selected meals, pantry, checked, meal plan
     const stateSub = supabase
       .channel("shopping_state_changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "shopping_state" }, (payload) => {
-        if (isLocalChange.current) return; // skip if we just saved this ourselves
         const st = payload.new;
         if (!st) return;
+        const incoming = JSON.stringify({
+          selected_meals: st.selected_meals || [],
+          pantry_items: st.pantry_items || [],
+          checked_items: st.checked_items || [],
+          meal_plan: st.meal_plan || {},
+        });
+        if (incoming === lastSavedState.current) return;
         setSelectedMeals(st.selected_meals || []);
         setPantryItems(st.pantry_items || []);
         setCheckedItems(st.checked_items || []);
@@ -416,12 +427,14 @@ export default function App() {
   useEffect(() => {
     if (recipes === null) return;
     if (stateTimer.current) clearTimeout(stateTimer.current);
-    isLocalChange.current = true;
     stateTimer.current = setTimeout(() => {
-      saveState(selectedMeals, pantryItems, checkedItems, mealPlan).finally(() => {
-        // Allow remote updates again after a short buffer
-        setTimeout(() => { isLocalChange.current = false; }, 1000);
+      lastSavedState.current = JSON.stringify({
+        selected_meals: selectedMeals,
+        pantry_items: pantryItems,
+        checked_items: checkedItems,
+        meal_plan: mealPlan,
       });
+      saveState(selectedMeals, pantryItems, checkedItems, mealPlan);
     }, 600);
   }, [selectedMeals, pantryItems, checkedItems, mealPlan]);
 
