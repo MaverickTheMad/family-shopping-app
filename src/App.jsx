@@ -340,6 +340,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const stateTimer = useRef(null);
   const lastSavedState = useRef(null);
+  const isSaving = useRef(false);
 
   useEffect(() => {
     seedIfEmpty().then(fetchAll).then((d) => {
@@ -351,35 +352,24 @@ export default function App() {
       setCheckedItems(d.checkedItems);
       setLastCooked(d.lastCooked);
       setMealPlan(d.mealPlan);
-      lastSavedState.current = JSON.stringify({
-        selected_meals: d.selectedMeals,
-        pantry_items: d.pantryItems,
-        checked_items: d.checkedItems,
-        meal_plan: d.mealPlan,
-      });
     });
 
-    // ── Real-time subscriptions ──
-    const stateSub = supabase
-      .channel("shopping_state_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "shopping_state" }, (payload) => {
-        const st = payload.new;
-        if (!st) return;
-        const incoming = JSON.stringify({
-          selected_meals: st.selected_meals || [],
-          pantry_items: st.pantry_items || [],
-          checked_items: st.checked_items || [],
-          meal_plan: st.meal_plan || {},
+    // Refetch shopping state when app comes back into focus
+    // This handles switching devices without realtime overwriting local changes
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && !isSaving.current) {
+        supabase.from("shopping_state").select("*").eq("id", "current").single().then(({ data }) => {
+          if (!data) return;
+          setSelectedMeals(data.selected_meals || []);
+          setPantryItems(data.pantry_items || []);
+          setCheckedItems(data.checked_items || []);
+          setMealPlan(data.meal_plan || {});
         });
-        if (incoming === lastSavedState.current) return;
-        setSelectedMeals(st.selected_meals || []);
-        setPantryItems(st.pantry_items || []);
-        setCheckedItems(st.checked_items || []);
-        setMealPlan(st.meal_plan || {});
-      })
-      .subscribe();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    // recipes — new recipes, edits, deletes
+    // ── Real-time subscriptions (recipes, extras, sections only — NOT shopping_state) ──
     const recipesSub = supabase
       .channel("recipes_changes")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "recipes" }, (payload) => {
@@ -393,7 +383,6 @@ export default function App() {
       })
       .subscribe();
 
-    // extras — toggles, adds, deletes
     const extrasSub = supabase
       .channel("extras_changes")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "extras" }, (payload) => {
@@ -407,7 +396,6 @@ export default function App() {
       })
       .subscribe();
 
-    // sections — ingredient category changes
     const sectionsSub = supabase
       .channel("sections_changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "sections" }, (payload) => {
@@ -418,7 +406,7 @@ export default function App() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(stateSub);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       supabase.removeChannel(recipesSub);
       supabase.removeChannel(extrasSub);
       supabase.removeChannel(sectionsSub);
@@ -429,13 +417,10 @@ export default function App() {
     if (recipes === null) return;
     if (stateTimer.current) clearTimeout(stateTimer.current);
     stateTimer.current = setTimeout(() => {
-      lastSavedState.current = JSON.stringify({
-        selected_meals: selectedMeals,
-        pantry_items: pantryItems,
-        checked_items: checkedItems,
-        meal_plan: mealPlan,
+      isSaving.current = true;
+      saveState(selectedMeals, pantryItems, checkedItems, mealPlan).finally(() => {
+        setTimeout(() => { isSaving.current = false; }, 2000);
       });
-      saveState(selectedMeals, pantryItems, checkedItems, mealPlan);
     }, 600);
   }, [selectedMeals, pantryItems, checkedItems, mealPlan]);
 
