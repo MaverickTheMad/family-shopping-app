@@ -338,6 +338,8 @@ export default function App() {
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [viewingRecipe, setViewingRecipe] = useState(null);
   const [toast, setToast] = useState("");
+  const [shoppingModal, setShoppingModal] = useState(false);
+  const [shoppingDate, setShoppingDate] = useState(() => new Date().toISOString().split("T")[0]);
   const stateTimer = useRef(null);
   const lastSavedState = useRef(null);
   const isSaving = useRef(false);
@@ -629,9 +631,6 @@ export default function App() {
       setSelectedMeals((p) => [...p, recipeId]);
     }
   }
-
-  const [shoppingModal, setShoppingModal] = useState(false);
-  const [shoppingDate, setShoppingDate] = useState(() => new Date().toISOString().split("T")[0]);
 
   async function handleWentShopping() {
     const shopDate = new Date(shoppingDate + "T12:00:00");
