@@ -630,26 +630,50 @@ export default function App() {
     }
   }
 
-  async function startNewTrip() {
-    if (!confirm("Start a new trip? Clears selected meals, pantry checks, and shopping check-offs.")) return;
-    // Log all selected meals as cooked today before resetting
+  const [shoppingModal, setShoppingModal] = useState(false);
+  const [shoppingDate, setShoppingDate] = useState(() => new Date().toISOString().split("T")[0]);
+
+  async function handleWentShopping() {
+    const shopDate = new Date(shoppingDate + "T12:00:00");
+    const nextShopDate = new Date(shopDate);
+    nextShopDate.setDate(shopDate.getDate() + 14);
+
+    // Log selected meals as cooked on the shopping date
     if (selectedMeals.length > 0) {
-      const now = new Date().toISOString();
+      const iso = shopDate.toISOString();
       await supabase.from("meal_history").insert(
-        selectedMeals.map((id) => ({ recipe_id: id, cooked_at: now }))
+        selectedMeals.map((id) => ({ recipe_id: id, cooked_at: iso }))
       );
       const updated = { ...lastCooked };
-      selectedMeals.forEach((id) => { updated[id] = now; });
+      selectedMeals.forEach((id) => { updated[id] = iso; });
       setLastCooked(updated);
     }
-    setSelectedMeals([]);
-    setMealMultipliers({});
-    setMealPlan({});
+
+    // Shift meal plan forward 14 days so next shop cycle starts fresh
+    // Meals planned >= 14 days out carry forward; earlier ones are cleared
+    const startOfCurrentWeek = new Date();
+    startOfCurrentWeek.setHours(0, 0, 0, 0);
+    startOfCurrentWeek.setDate(startOfCurrentWeek.getDate() - startOfCurrentWeek.getDay());
+
+    const daysUntilNext = Math.round((nextShopDate - startOfCurrentWeek) / (1000 * 60 * 60 * 24));
+    const newPlan = {};
+    Object.entries(mealPlan).forEach(([k, v]) => {
+      const offset = parseInt(k);
+      if (offset >= daysUntilNext) {
+        newPlan[String(offset - daysUntilNext)] = v;
+      }
+    });
+    setMealPlan(newPlan);
+
+    // Clear pantry checks, shopping check-offs, one-time extras
+    // Keep: selected meals, multipliers, meal plan (shifted above)
     setPantryItems([]);
     setCheckedItems([]);
     await supabase.from("extras").update({ active: false }).eq("is_staple", false);
     setExtras((p) => p.map((e) => e.is_staple ? e : { ...e, active: false }));
-    showToast("Fresh trip started");
+
+    setShoppingModal(false);
+    showToast(`Shopped on ${shopDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })} — next trip around ${nextShopDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`);
     setTab("meals");
   }
 
@@ -669,7 +693,7 @@ export default function App() {
         .spin { animation: spin 1s linear infinite; }
       `}</style>
       <div className="paper-bg min-h-screen pb-28">
-        <Header onNewTrip={startNewTrip} />
+        <Header onWentShopping={() => setShoppingModal(true)} />
         <main className="max-w-3xl mx-auto px-4 pt-2">
           {tab === "meals" && (
             <MealsTab
@@ -747,6 +771,28 @@ export default function App() {
             lastCooked={lastCooked}
           />
         )}
+        {shoppingModal && (
+          <div className="fixed inset-0 bg-stone-900/50 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setShoppingModal(false)}>
+            <div className="bg-[#FBF6EC] w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl p-6 card-shadow" onClick={(e) => e.stopPropagation()}>
+              <div className="font-display text-2xl text-stone-900 mb-1">Went Shopping</div>
+              <p className="text-sm text-stone-500 mb-5">When did you go? The calendar shifts forward 14 days and pantry checks reset. Your meal plan stays for reference.</p>
+              <div className="mb-5">
+                <label className="text-xs uppercase tracking-wider text-stone-500 font-semibold">Shopping date</label>
+                <input
+                  type="date"
+                  value={shoppingDate}
+                  onChange={(e) => setShoppingDate(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:border-amber-700/50 focus:ring-2 focus:ring-amber-700/10"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShoppingModal(false)} className="flex-1 py-2.5 rounded-full text-sm font-medium text-stone-600 border border-stone-200 hover:bg-stone-50">cancel</button>
+                <button onClick={handleWentShopping} className="flex-1 py-2.5 rounded-full text-sm font-medium bg-amber-800 text-amber-50 hover:bg-amber-900">confirm</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {toast && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 slidein pointer-events-none">
             <div className="bg-stone-900 text-amber-50 px-5 py-2.5 rounded-full text-sm font-medium card-shadow">{toast}</div>
@@ -772,7 +818,7 @@ function LoadingScreen() {
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-function Header({ onNewTrip }) {
+function Header({ onWentShopping }) {
   return (
     <header className="border-b border-stone-200/70 bg-[#FBF6EC]/80 backdrop-blur-sm sticky top-0 z-30">
       <div className="max-w-3xl mx-auto px-4 py-4 flex items-end justify-between gap-3">
@@ -782,8 +828,8 @@ function Header({ onNewTrip }) {
             Pantry <span className="italic text-amber-800/80" style={{ fontWeight: 400 }}>&</span> List
           </h1>
         </div>
-        <button onClick={onNewTrip} className="text-stone-500 hover:text-amber-800 transition-colors flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full border border-stone-300/70 hover:border-amber-700/40 hover:bg-amber-50/40">
-          <RefreshCw className="w-3.5 h-3.5" />new trip
+        <button onClick={onWentShopping} className="text-stone-500 hover:text-amber-800 transition-colors flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-full border border-stone-300/70 hover:border-amber-700/40 hover:bg-amber-50/40">
+          <ShoppingCart className="w-3.5 h-3.5" />went shopping
         </button>
       </div>
       <div className="ridge h-[3px]" />
@@ -796,6 +842,8 @@ function Header({ onNewTrip }) {
 function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onToggle, onSetMultiplier, onToggleFavorite, onAssignDay, onEdit, onAddRecipe }) {
   const [assigningDay, setAssigningDay] = useState(null);
   const [search, setSearch] = useState("");
+  const [dragFrom, setDragFrom] = useState(null);  // day offset being dragged
+  const [dragOver, setDragOver] = useState(null);  // day offset being hovered
 
   const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const today = new Date();
@@ -857,13 +905,32 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
                 const assignedId = mealPlan[String(dayOffset)];
                 const assignedRecipe = assignedId ? recipes.find((r) => r.id === assignedId) : null;
                 const isPicking = assigningDay === dayOffset;
+                const isDragTarget = dragOver === dayOffset && dragFrom !== dayOffset;
 
                 return (
-                  <button
+                  <div
                     key={dayOffset}
-                    onClick={() => setAssigningDay(isPicking ? null : dayOffset)}
-                    className={"flex flex-col p-1.5 min-h-[72px] text-left transition-colors relative " + (
-                      isPicking ? "bg-amber-50 ring-2 ring-inset ring-amber-600"
+                    draggable={!!assignedRecipe}
+                    onDragStart={() => { setDragFrom(dayOffset); setAssigningDay(null); }}
+                    onDragEnd={() => { setDragFrom(null); setDragOver(null); }}
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(dayOffset); }}
+                    onDragLeave={() => setDragOver(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragFrom === null || dragFrom === dayOffset) return;
+                      // Swap the two days
+                      const fromId = mealPlan[String(dragFrom)];
+                      const toId = mealPlan[String(dayOffset)];
+                      onAssignDay(dragFrom, toId || null);
+                      onAssignDay(dayOffset, fromId || null);
+                      setDragFrom(null);
+                      setDragOver(null);
+                    }}
+                    onClick={() => !dragFrom && setAssigningDay(isPicking ? null : dayOffset)}
+                    className={"flex flex-col p-1.5 min-h-[72px] text-left transition-colors relative cursor-pointer select-none " + (
+                      isDragTarget ? "bg-amber-100 ring-2 ring-inset ring-amber-500"
+                      : isPicking ? "bg-amber-50 ring-2 ring-inset ring-amber-600"
+                      : dragFrom === dayOffset ? "opacity-40"
                       : assignedRecipe ? "bg-white hover:bg-amber-50/30"
                       : isPast ? "bg-stone-50/40"
                       : "bg-white hover:bg-amber-50/20"
@@ -885,7 +952,7 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
                     ) : (
                       !isPast && <div className="text-stone-200 text-base flex-1 flex items-end pb-0.5">+</div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
