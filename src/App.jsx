@@ -1060,11 +1060,11 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
                     )}
                   >
                     {/* Date number */}
-                    <div className={"text-xs font-semibold mb-1 w-5 h-5 flex items-center justify-center rounded-full " + (
-                      isToday ? "rounded-full flex items-center justify-center" style={{background:"var(--accent)",color:"#fff",width:"20px",height:"20px"}}
-                      : isPast ? "text-[var(--text-soft)]"
-                      : "text-[var(--text-soft)]"
-                    )}>{date.getDate()}</div>
+                    <div className="text-xs font-semibold mb-1 w-5 h-5 flex items-center justify-center rounded-full"
+                      style={{
+                        background: isToday ? "var(--accent)" : "transparent",
+                        color: isToday ? "#fff" : isPast ? "var(--text-soft)" : "var(--text-soft)"
+                      }}>{date.getDate()}</div>
 
                     {/* Assigned meal */}
                     {assignedRecipe ? (
@@ -1116,7 +1116,8 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
               return (
                 <button key={r.id}
                   onClick={() => { onAssignDay(assigningDay, r.id); setAssigningDay(null); setSearch(""); }}
-                  className={"text-left px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-2 " + (isAssigned ? "rounded-full flex items-center justify-center" style={{background:"var(--accent)",color:"#fff",width:"20px",height:"20px"}} : "hover:bg-[var(--bg-sunken)] text-[var(--text)]")}>
+                  className="text-left px-3 py-2.5 rounded-xl text-sm transition-colors flex items-center gap-2"
+                  style={{ background: isAssigned ? "var(--app-accent)" : "transparent", color: isAssigned ? "#fff" : "var(--text)" }}>
                   <span className="flex-1">{r.name}</span>
                   {r.category && r.category !== "Other" && (
                     <span className={"text-[10px] uppercase tracking-wider shrink-0 " + (isAssigned ? "text-[var(--app-weak)]" : "text-[var(--text-soft)]")}>{r.category}</span>
@@ -1873,7 +1874,9 @@ function RecipeEditor({ recipe, onSave, onCancel, onDelete, sections, onSetSecti
             <label className="text-xs uppercase tracking-wider text-[var(--text-soft)] font-semibold">category</label>
             <div className="flex gap-1.5 mt-1.5 flex-wrap">
               {RECIPE_CATEGORIES.map((c) => (
-                <button key={c} onClick={() => setCategory(c)} className={`px-3 py-1 rounded-full text-xs font-medium ${category === c ? "rounded-full flex items-center justify-center" style={{background:"var(--accent)",color:"#fff",width:"20px",height:"20px"}} : "bg-[var(--bg-paper)] text-[var(--text-soft)] border border-[var(--border)]"}`}>{c}</button>
+                <button key={c} onClick={() => setCategory(c)}
+                  className="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                  style={{ background: category === c ? "var(--app-accent)" : "var(--bg-sunken)", color: category === c ? "#fff" : "var(--text-soft)", border: category === c ? "none" : "1px solid var(--border)" }}>{c}</button>
               ))}
             </div>
           </div>
@@ -2074,9 +2077,11 @@ function RecipesTab({ recipes, selected, lastCooked, onView, onToggleFavorite, o
               >
                 {/* Top row: category/selected badge + favorite heart + link */}
                 <div className="flex items-center justify-between mb-2">
-                  <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                    isSelected ? "rounded-full flex items-center justify-center" style={{background:"var(--accent)",color:"#fff",width:"20px",height:"20px"}} : "bg-[var(--bg-elevated)] text-[var(--text-soft)]"
-                  }`}>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                    style={{
+                      background: isSelected ? "var(--accent)" : "var(--bg-elevated)",
+                      color: isSelected ? "#fff" : "var(--text-soft)"
+                    }}>
                     {isSelected ? "✓ this week" : (r.category || "Other")}
                   </span>
                   <div className="flex items-center gap-2">
