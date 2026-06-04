@@ -1157,7 +1157,7 @@ function MealsTab({ recipes, selected, multipliers, lastCooked, mealPlan, onTogg
                       </div>
                     </button>
                     <div className="flex items-center pr-2 gap-1">
-                      <div className="flex items-center gap-0.5 rounded-full px-1.5 py-1" style={{background:"var(--bg-elevated)",border:"1px solid var(--border)"}}" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-0.5 rounded-full px-1.5 py-1" style={{background:"var(--bg-elevated)",border:"1px solid var(--border)"}} onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => onSetMultiplier(r.id, mult - 1)} disabled={mult <= 1} className="w-5 h-5 rounded-full flex items-center justify-center text-[var(--text-soft)] hover:bg-[var(--bg-paper)] disabled:opacity-30 font-bold text-sm transition-colors">−</button>
                         <span className="text-xs font-bold text-[var(--app-accent)] min-w-[22px] text-center">{mult}×</span>
                         <button onClick={() => onSetMultiplier(r.id, mult + 1)} disabled={mult >= 10} className="w-5 h-5 rounded-full flex items-center justify-center text-[var(--text-soft)] hover:bg-[var(--bg-paper)] disabled:opacity-30 font-bold text-sm transition-colors">+</button>
