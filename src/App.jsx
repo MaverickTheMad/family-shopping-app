@@ -1547,6 +1547,7 @@ function ListTab({ groups, checked, onToggle, total, sections, onSetSection }) {
             </div>
           </div>
         </div>
+       </div>
       )}
     </section>
   );
