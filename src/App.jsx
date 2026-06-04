@@ -1313,7 +1313,7 @@ function PantryTab({ ingredients, agg, pantryMap, onToggle, onSetQty, skipCount,
             </div>
           </div>
         </div>
-      )}
+      )&rbrace;
     </section>
   );
 }
