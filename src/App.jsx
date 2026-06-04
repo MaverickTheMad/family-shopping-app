@@ -1313,10 +1313,10 @@ function PantryTab({ ingredients, agg, pantryMap, onToggle, onSetQty, skipCount,
             </div>
           </div>
         </div>
-      </div>
-    )}
-    </section>
-  )}
+       </div>
+     )}
+   </section>
+  );
 }
 
 // ─── Extras Tab ───────────────────────────────────────────────────────────────
